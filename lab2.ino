@@ -58,12 +58,13 @@ void uart_tx(){
   delta_t = tx_curr_time - tx_start_time;
   switch(tx_state){
     case ACTIVE:
-   		if (delta_t >= BIT_TIME){
+   		if (delta_t > BIT_TIME){
         //Start bit
         if (tx_count==0){
           digitalWrite(TX_PIN,LOW);
           tx_count++;
           tx_start_time=millis();
+          break;
         }
         //Data
         else if (tx_count<=buffer_size){
@@ -72,6 +73,7 @@ void uart_tx(){
           tx_start_time=millis();
           tx_parity = tx_parity^tx_bit;
           tx_count++;
+          break;
         }
         //Parity
         else if (tx_count==buffer_size+1){
@@ -80,12 +82,14 @@ void uart_tx(){
           tx_start_time=millis();
           tx_parity=PARITY;
           tx_count++;
+          break;
         }
         //Stop bit 
         else if (tx_count==buffer_size+2){
           digitalWrite(TX_PIN,HIGH);
           tx_start_time=millis()+(STOP_BIT_TIME-1)*BIT_TIME;
           tx_count++;
+          break;
         }
         //Idle/COML2
         else{
@@ -93,9 +97,10 @@ void uart_tx(){
           tx_start_time=millis();
           tx_state = COML2;
           tx_count = 0;
+          break;
         }
         break;
-      }   
+      } break;  
     case COML2:
       if (delta_t > tx_wait){
         tx_start_time = millis()-BIT_TIME;
@@ -138,6 +143,7 @@ void uart_rx(){
           }
         }
       }
+      break;
     case STOP_BIT:
       rx_sample_result = sample();
       if (rx_sample_result == 1){
@@ -145,6 +151,7 @@ void uart_rx(){
         rx_state = IDLE;
         rx_count = 0;
       }
+      break;
     case ERROR:
       rx_delta_t = rx_curr_time - rx_start_time;
       if (rx_delta_t > FRAME_TIME-1 ){ // -1 due to start bit already happened
@@ -152,6 +159,7 @@ void uart_rx(){
         rx_state = IDLE;
         rx_start_time = millis();
       }
+      break;
     default:
       break;
   }

@@ -51,11 +51,13 @@ void usart_tx(){
         } else if (delta_t >= half_BIT_TIME){
           digitalWrite(CLK_OUT_PIN,LOW);
         }
+        break;
     case PASSIVE:
       if (delta_t > wait){
         state = ACTIVE;
         start_time = millis();
       }
+      break;
   }
 }
 
