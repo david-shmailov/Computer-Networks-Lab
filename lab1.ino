@@ -44,7 +44,6 @@ void usart_tx(){
           start_time = millis();
           if (tx_count == buffer_size){
             wait = random(wait_max);
-            start_time = millis();
             state = PASSIVE;
             tx_count = 0;
           }
