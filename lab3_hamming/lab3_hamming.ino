@@ -108,8 +108,7 @@ void usart_rx(){
     clk_in_prev = clk_in_curr;
     if (l1_rx_count == buffer_size){
       l1_rx_count = 0;
-      //layer_1_rx_busy = 0;
-      // bug here, we need some state to tell us when the clk is finished toggling
+      layer_1_rx_busy = 0;
     }
   }else{
     clk_in_prev = clk_in_curr;
