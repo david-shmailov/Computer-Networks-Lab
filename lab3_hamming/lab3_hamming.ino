@@ -26,26 +26,28 @@ typedef enum {ACTIVE, PASSIVE} state_type;
 unsigned long start_time = 0;
 unsigned long curr_time = 0;
 unsigned long delta_t;
-int tx_buff = 0b01010101;
-int tx_count = 0;
-long wait;
-int tx_bit;
-state_type state = ACTIVE;
+int l1_tx_buffer = 0b01010101;
+int l1_tx_count = 0;
+long l1_tx_wait = 0;
+int l1_tx_bit;
+state_type l1_tx_state = PASSIVE;
 
 // usart_Rx global variables
+int layer_1_rx_busy =0;
 int clk_in_prev = 0;
 int clk_in_curr = 0;
-int rx_bit;
-int rx_buff = 0;
-int rx_count = 0; 
+int l1_rx_bit;
+int l1_rx_buffer = 0;
+int l1_rx_count = 0; 
 
 //layer2_tx global variables
+int layer_1_tx_busy = 0;
+int layer_2_tx_request =0 ;
 typedef enum {FIRST, SECOND} l2_state_type;
 l2_state_type half_state = FIRST;
-int tx_busy = 1;
 int layer_2_tx_request = 0;
 int layer2_tx_buffer_counter = 0;
-char l2_tx_buff [L2_BUFFER_SIZE] = "DAVIDNERIYA";
+char l2_tx_buff [L2_BUFFER_SIZE] = "DAVID_NERIYA";
 int tx_hamming_counter =0;
 int tx_byte_hamming = 0;
 int P1= 0;
@@ -54,7 +56,6 @@ int P3= 0;
 
 
 // L2 RX global variables
-int layer_1_rx_busy;
 int layer_1_rx_busy_prev;
 int l2_rx_counter = 0;
 int l2_buffer_pos;
@@ -69,27 +70,30 @@ int S3;
 void usart_tx(){
   curr_time = millis();
   delta_t = curr_time - start_time;
-  switch(state){
+  switch(l1_tx_state){
     case ACTIVE:
    		if (delta_t >= BIT_TIME){
           digitalWrite(CLK_OUT_PIN,HIGH);
-          tx_bit = bitRead(tx_buff, tx_count);
-          digitalWrite(TX_PIN,tx_bit);
-          tx_count ++;
+          l1_tx_bit = bitRead(l1_tx_buffer, l1_tx_count);
+          digitalWrite(TX_PIN,l1_tx_bit);
+          l1_tx_count ++;
           start_time = millis();
-          if (tx_count == buffer_size){
-            wait = random(wait_max);
-            state = PASSIVE;
-            tx_count = 0;
+          if (l1_tx_count == buffer_size){
+            l1_tx_wait = random(wait_max);
+            l1_tx_state = PASSIVE;
+            l1_tx_count = 0;
+            layer_1_rx_busy = 0;
           }
         } else if (delta_t >= half_BIT_TIME){
           digitalWrite(CLK_OUT_PIN,LOW);
         }
         break;
     case PASSIVE:
-      if (delta_t > wait){
-        state = ACTIVE;
+      if (delta_t > l1_tx_wait && layer_2_tx_request == 1){
+        l1_tx_state = ACTIVE;
         start_time = millis();
+        layer_2_tx_request = 0;
+        layer_1_rx_busy = 1;
       }
       break;
   }
@@ -98,12 +102,12 @@ void usart_tx(){
 void usart_rx(){
   clk_in_curr = digitalRead(CLK_IN_PIN);
   if (clk_in_prev > clk_in_curr){
-    rx_bit = digitalRead(RX_PIN);
-    bitWrite(rx_buff, rx_count, rx_bit);
-    rx_count ++;
+    l1_rx_bit = digitalRead(RX_PIN);
+    bitWrite(l1_rx_buffer, l1_rx_count, l1_rx_bit);
+    l1_rx_count ++;
     clk_in_prev = clk_in_curr;
-    if (rx_count == buffer_size){
-      rx_count = 0;
+    if (l1_rx_count == buffer_size){
+      l1_rx_count = 0;
     }
   }else{
     clk_in_prev = clk_in_curr;
@@ -112,23 +116,24 @@ void usart_rx(){
   
 
 void link_layer_tx(){
-  if (tx_busy == 0){
+  if (layer_1_tx_busy == 0){
     if (layer2_tx_buffer_counter<=L2_BUFFER_SIZE){
       layer_2_tx_request=1;
       if (tx_hamming_counter==0){
         tx_byte_hamming = l2_tx_buff[layer2_tx_buffer_counter];
-        tx_buff = Hamming47_tx();
+        l1_tx_buffer = Hamming47_tx();
         tx_hamming_counter=1;
       }
       else{
         tx_byte_hamming = l2_tx_buff[layer2_tx_buffer_counter]>>4;
-        tx_buff = Hamming47_tx();
+        l1_tx_buffer = Hamming47_tx();
         tx_hamming_counter = 0;
         layer2_tx_buffer_counter++;
       }
     }
   }
 }
+
 void link_layer_rx(){
 
   if (layer_1_rx_busy < layer_1_rx_busy_prev){ // falling edge of rx_busy flag
@@ -166,17 +171,18 @@ char Hamming47_tx(){
 }
 
 char Hamming47_rx(){
-  Serial.println("Recieved byte: %x", rx_buff);
-  S1 = bitRead(rx_buff, P1_bit) ^ bitRead(rx_buff, D1_bit) ^ bitRead(rx_buff, D2_bit) ^ bitRead(rx_buff, D4_bit);
-  S2 = bitRead(rx_buff, P2_bit) ^ bitRead(rx_buff, D1_bit) ^ bitRead(rx_buff, D3_bit) ^ bitRead(rx_buff, D4_bit);
-  S3 = bitRead(rx_buff, P3_bit) ^ bitRead(rx_buff, D2_bit) ^ bitRead(rx_buff, D3_bit) ^ bitRead(rx_buff, D4_bit);
+  char temp_rx=l1_rx_buffer;
+  Serial.println("Recieved byte: %x", temp_rx);
+  S1 = bitRead(temp_rx, P1_bit) ^ bitRead(temp_rx, D1_bit) ^ bitRead(temp_rx, D2_bit) ^ bitRead(temp_rx, D4_bit);
+  S2 = bitRead(temp_rx, P2_bit) ^ bitRead(temp_rx, D1_bit) ^ bitRead(temp_rx, D3_bit) ^ bitRead(temp_rx, D4_bit);
+  S3 = bitRead(temp_rx, P3_bit) ^ bitRead(temp_rx, D2_bit) ^ bitRead(temp_rx, D3_bit) ^ bitRead(temp_rx, D4_bit);
   int S = (S3 << 2) | (S2 << 1) | S1;
   if (S>0){
     int index = 7-(S);
-    rx_buff = rx_buff ^ (1 << index);
-    Serial.println("Fixed byte: %x", rx_buff);
+    temp_rx = temp_rx ^ (1 << index);
+    Serial.println("Fixed byte: %x", temp_rx);
   }
-  char data = (bitRead(rx_buff, D1_bit) << 3) | (bitRead(rx_buff, D2_bit) << 2) | (bitRead(rx_buff, D3_bit) << 1) | bitRead(rx_buff, D4_bit);
+  char data = (bitRead(temp_rx, D1_bit) << 3) | (bitRead(temp_rx, D2_bit) << 2) | (bitRead(temp_rx, D3_bit) << 1) | bitRead(temp_rx, D4_bit);
   return data;
 }
 
@@ -186,10 +192,13 @@ void setup()
   pinMode(RX_PIN, INPUT);
   pinMode(CLK_OUT_PIN, OUTPUT);
   pinMode(CLK_IN_PIN, INPUT);
+  Serial.begin(9600);
 }
 
 void loop()
 {
+  link_layer_tx();
+  link_layer_rx();
   usart_tx();
   usart_rx();
 }
