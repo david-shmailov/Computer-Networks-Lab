@@ -143,12 +143,12 @@ void link_layer_rx(){
       half_byte_msb = Hamming47_rx();
       l2_buffer_pos = l2_rx_counter >> 1;
       l2_rx_buff[l2_buffer_pos] = (half_byte_msb << 4) | half_byte_lsb;
-      Serial.println("Received char: %c", l2_rx_buff[l2_buffer_pos]);
+      Serial.print("Received char: %c\n", l2_rx_buff[l2_buffer_pos]);
     }
     l2_rx_counter ++;
     if (l2_rx_counter == L2_COUNT_LIMIT){
       l2_rx_counter = 0;
-      Serial.println("Received String: %s", l2_rx_buff);
+      Serial.print("Received String: %\n", l2_rx_buff);
     }
   }
   layer_1_rx_busy_prev = layer_1_rx_busy; 
@@ -166,13 +166,13 @@ char Hamming47_tx(){
       bitWrite(temp_l2,D2_bit,bitRead(tx_byte_hamming,2));
       bitWrite(temp_l2,D3_bit,bitRead(tx_byte_hamming,1));
       bitWrite(temp_l2,D4_bit,bitRead(tx_byte_hamming,0));
-      Serial.println("Sending byte: %x", temp_l2);
+      Serial.print("Sending byte: %x\n", temp_l2);
       return temp_l2;
 }
 
 char Hamming47_rx(){
   char temp_rx=l1_rx_buffer;
-  Serial.println("Recieved byte: %x", temp_rx);
+  Serial.print("Recieved byte: %x\n", temp_rx);
   S1 = bitRead(temp_rx, P1_bit) ^ bitRead(temp_rx, D1_bit) ^ bitRead(temp_rx, D2_bit) ^ bitRead(temp_rx, D4_bit);
   S2 = bitRead(temp_rx, P2_bit) ^ bitRead(temp_rx, D1_bit) ^ bitRead(temp_rx, D3_bit) ^ bitRead(temp_rx, D4_bit);
   S3 = bitRead(temp_rx, P3_bit) ^ bitRead(temp_rx, D2_bit) ^ bitRead(temp_rx, D3_bit) ^ bitRead(temp_rx, D4_bit);
@@ -180,7 +180,7 @@ char Hamming47_rx(){
   if (S>0){
     int index = 7-(S);
     temp_rx = temp_rx ^ (1 << index);
-    Serial.println("Fixed byte: %x", temp_rx);
+    Serial.print("Fixed byte: %x\n", temp_rx);
   }
   char data = (bitRead(temp_rx, D1_bit) << 3) | (bitRead(temp_rx, D2_bit) << 2) | (bitRead(temp_rx, D3_bit) << 1) | bitRead(temp_rx, D4_bit);
   return data;
