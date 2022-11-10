@@ -43,6 +43,7 @@ int rx_count = 0;
 typedef enum {FIRST, SECOND} l2_state_type;
 l2_state_type half_state = FIRST;
 int tx_busy = 1;
+int layer_2_tx_request = 0;
 int layer2_tx_buffer_counter = 0;
 char l2_tx_buff [L2_BUFFER_SIZE] = "DAVIDNERIYA";
 int tx_hamming_counter =0;
@@ -111,9 +112,23 @@ void usart_rx(){
   
 
 void link_layer_tx(){
-  
+  if (tx_busy == 0){
+    if (layer2_tx_buffer_counter<=L2_BUFFER_SIZE){
+      layer_2_tx_request=1;
+      if (tx_hamming_counter==0){
+        tx_byte_hamming = l2_tx_buff[layer2_tx_buffer_counter];
+        tx_buff = Hamming47_tx();
+        tx_hamming_counter=1;
+      }
+      else{
+        tx_byte_hamming = l2_tx_buff[layer2_tx_buffer_counter]>>4;
+        tx_buff = Hamming47_tx();
+        tx_hamming_counter = 0;
+        layer2_tx_buffer_counter++;
+      }
+    }
+  }
 }
-
 void link_layer_rx(){
 
   if (layer_1_rx_busy < layer_1_rx_busy_prev){ // falling edge of rx_busy flag
@@ -134,35 +149,20 @@ void link_layer_rx(){
   layer_1_rx_busy_prev = layer_1_rx_busy; 
 }
 
-void encode_hamming(){
-  if (tx_busy == 0){
-    if (layer2_tx_buffer_counter<=L2_BUFFER_SIZE){
-      if (tx_hamming_counter==0){
-        tx_byte_hamming = l2_tx_buff[layer2_tx_buffer_counter];
-        P1 = bitRead(tx_byte_hamming,3) ^ bitRead(tx_byte_hamming,2) ^ bitRead(tx_byte_hamming,0);
-        P2 = bitRead(tx_byte_hamming,3) ^ bitRead(tx_byte_hamming,1) ^ bitRead(tx_byte_hamming,0);
-        P3 = bitRead(tx_byte_hamming,2) ^ bitRead(tx_byte_hamming,1) ^ bitRead(tx_byte_hamming,0);
-        bitWrite(tx_buff,P1_bit,P1);
-        bitWrite(tx_buff,P2_bit,P2);
-        bitWrite(tx_buff,P3_bit,P3);
-        bitWrite(tx_buff,D1_bit,bitRead(tx_byte_hamming,3));
-        bitWrite(tx_buff,D2_bit,bitRead(tx_byte_hamming,2));
-        bitWrite(tx_buff,D3_bit,bitRead(tx_byte_hamming,1));
-        bitWrite(tx_buff,D4_bit,bitRead(tx_byte_hamming,0));
-      }
-      else{
-        tx_byte_hamming = l2_tx_buff[layer2_tx_buffer_counter]>>4;
-      }
-
-    }
-    else{
-      
-    }
-  
-  }
-  else{
-    
-  }
+char Hamming47_tx(){
+      char temp_l2=0;
+      P1 = bitRead(tx_byte_hamming,3) ^ bitRead(tx_byte_hamming,2) ^ bitRead(tx_byte_hamming,0);
+      P2 = bitRead(tx_byte_hamming,3) ^ bitRead(tx_byte_hamming,1) ^ bitRead(tx_byte_hamming,0);
+      P3 = bitRead(tx_byte_hamming,2) ^ bitRead(tx_byte_hamming,1) ^ bitRead(tx_byte_hamming,0);
+      bitWrite(temp_l2,P1_bit,P1);
+      bitWrite(temp_l2,P2_bit,P2);
+      bitWrite(temp_l2,P3_bit,P3);
+      bitWrite(temp_l2,D1_bit,bitRead(tx_byte_hamming,3));
+      bitWrite(temp_l2,D2_bit,bitRead(tx_byte_hamming,2));
+      bitWrite(temp_l2,D3_bit,bitRead(tx_byte_hamming,1));
+      bitWrite(temp_l2,D4_bit,bitRead(tx_byte_hamming,0));
+      Serial.println("Sending byte: %x", temp_l2);
+      return temp_l2;
 }
 
 char Hamming47_rx(){
