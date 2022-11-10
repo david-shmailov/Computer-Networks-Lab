@@ -1,0 +1,4 @@
+{
+    "sketch": "lab3_hamming\\lab3_hamming.ino",
+    "board": "arduino:avr:uno"
+}
