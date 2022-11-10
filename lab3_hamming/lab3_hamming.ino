@@ -4,7 +4,7 @@
 #define RX_PIN 3
 #define CLK_OUT_PIN 4
 #define CLK_IN_PIN 5
-#define L2_BUFFER_SIZE 8
+#define L2_BUFFER_SIZE 16
 #define L2_COUNT_LIMIT L2_BUFFER_SIZE<<1
 
 
@@ -30,6 +30,14 @@ int clk_in_curr = 0;
 int rx_bit;
 int rx_buff = 0;
 int rx_count = 0; 
+
+//layer2_tx global variables
+typedef enum {FIRST, SECOND} l2_state_type;
+l2_state_type half_state = FIRST;
+int tx_busy = 1;
+int layer2_tx_buffer_counter = 0;
+char l2_tx_buff [L2_BUFFER_SIZE] = "DAVIDNERIYA";
+
 
 // L2 RX global variables
 int layer_1_rx_busy;
@@ -109,7 +117,19 @@ void link_layer_rx(){
 }
 
 void encode_hamming(){
+  if (tx_busy == 0){
+    if (layer2_tx_buffer_counter<=L2_BUFFER_SIZE){
+      switch
 
+    }
+    else{
+      
+    }
+  
+  }
+  else{
+    
+  }
 }
 
 char decode_hamming(){
