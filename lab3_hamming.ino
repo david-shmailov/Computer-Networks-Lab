@@ -22,6 +22,13 @@ long wait;
 int tx_bit;
 state_type state = ACTIVE;
 
+//layer2_tx global variables
+typedef enum {FIRST, SECOND} state_type;
+state_type half_state = FIRST;
+int tx_busy = 1;
+int layer2_tx_buffer_counter = 0;
+char layer2_data[L2_BUFFER_SIZE]="DAVIDNERIYA"
+
 // usart_Rx global variables
 int clk_in_prev = 0;
 int clk_in_curr = 0;
@@ -85,14 +92,28 @@ void layer2_rx(){
 }
 
 int hamming_tx(){
+  if (tx_busy == 0){
+    if (layer2_tx_buffer_counter<=L2_BUFFER_SIZE){
+      switch
+
+    }
+    else{
+      break;
+    }
   
+  }
+  else{
+    break;
+  }
 }
+
 void setup()
 {
   pinMode(TX_PIN, OUTPUT);
   pinMode(RX_PIN, INPUT);
   pinMode(CLK_OUT_PIN, OUTPUT);
   pinMode(CLK_IN_PIN, INPUT);
+  Serial.begin(9600);
 }
 
 void loop()
