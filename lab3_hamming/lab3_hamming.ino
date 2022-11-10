@@ -6,6 +6,13 @@
 #define CLK_IN_PIN 5
 #define L2_BUFFER_SIZE 16
 #define L2_COUNT_LIMIT L2_BUFFER_SIZE<<1
+#define P1_bit 6
+#define P2_bit 5
+#define D1_bit 4
+#define P3_bit 3
+#define D2_bit 2
+#define D3_bit 1
+#define D4_bit 0
 
 
 // usart_tx global variables
@@ -37,6 +44,11 @@ l2_state_type half_state = FIRST;
 int tx_busy = 1;
 int layer2_tx_buffer_counter = 0;
 char l2_tx_buff [L2_BUFFER_SIZE] = "DAVIDNERIYA";
+int tx_hamming_counter =0;
+int tx_byte_hamming = 0;
+int P1= 0;
+int P2= 0;
+int P3= 0;
 
 
 // L2 RX global variables
@@ -119,7 +131,22 @@ void link_layer_rx(){
 void encode_hamming(){
   if (tx_busy == 0){
     if (layer2_tx_buffer_counter<=L2_BUFFER_SIZE){
-      switch
+      if (tx_hamming_counter==0){
+        tx_byte_hamming = l2_tx_buff[layer2_tx_buffer_counter];
+        P1 = bitRead(tx_byte_hamming,3) ^ bitRead(tx_byte_hamming,2) ^ bitRead(tx_byte_hamming,0);
+        P2 = bitRead(tx_byte_hamming,3) ^ bitRead(tx_byte_hamming,1) ^ bitRead(tx_byte_hamming,0);
+        P3 = bitRead(tx_byte_hamming,2) ^ bitRead(tx_byte_hamming,1) ^ bitRead(tx_byte_hamming,0);
+        bitWrite(tx_buff,P1_bit,P1);
+        bitWrite(tx_buff,P2_bit,P2);
+        bitWrite(tx_buff,P3_bit,P3);
+        bitWrite(tx_buff,D1_bit,bitRead(tx_byte_hamming,3));
+        bitWrite(tx_buff,D2_bit,bitRead(tx_byte_hamming,2));
+        bitWrite(tx_buff,D3_bit,bitRead(tx_byte_hamming,1));
+        bitWrite(tx_buff,D4_bit,bitRead(tx_byte_hamming,0));
+      }
+      else{
+        tx_byte_hamming = l2_tx_buff[layer2_tx_buffer_counter]>>4;
+      }
 
     }
     else{
@@ -131,6 +158,7 @@ void encode_hamming(){
     
   }
 }
+
 
 char decode_hamming(){
   
