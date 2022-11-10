@@ -7,6 +7,14 @@
 #define L2_BUFFER_SIZE 16
 #define L2_COUNT_LIMIT L2_BUFFER_SIZE<<1
 
+#define P1_bit 6
+#define P2_bit 5
+#define D1_bit 4
+#define P3_bit 3
+#define D2_bit 2
+#define D3_bit 1
+#define D4_bit 0
+
 
 // usart_tx global variables
 const int BIT_TIME = 20;
@@ -47,6 +55,10 @@ int l2_buffer_pos;
 char l2_rx_buff [L2_BUFFER_SIZE];
 char half_byte_lsb;
 char half_byte_msb;
+
+int S1;
+int S2;
+int S3;
 
 void usart_tx(){
   curr_time = millis();
@@ -101,39 +113,39 @@ void link_layer_rx(){
 
   if (layer_1_rx_busy < layer_1_rx_busy_prev){ // falling edge of rx_busy flag
     if (l2_rx_counter % 2 == 0){ // even number of bits
-      half_byte_lsb = decode_hamming();
+      half_byte_lsb = Hamming47_rx();
     }else{ // odd number of bits
-      half_byte_msb = decode_hamming();
+      half_byte_msb = Hamming47_rx();
       l2_buffer_pos = l2_rx_counter >> 1;
       l2_rx_buff[l2_buffer_pos] = (half_byte_msb << 4) | half_byte_lsb;
+      Serial.println("Received char: %c", l2_rx_buff[l2_buffer_pos]);
     }
     l2_rx_counter ++;
     if (l2_rx_counter == L2_COUNT_LIMIT){
       l2_rx_counter = 0;
-      Serial.println(l2_rx_buff);
+      Serial.println("Received String: %s", l2_rx_buff);
     }
   }
   layer_1_rx_busy_prev = layer_1_rx_busy; 
 }
 
 void encode_hamming(){
-  if (tx_busy == 0){
-    if (layer2_tx_buffer_counter<=L2_BUFFER_SIZE){
-      switch
 
-    }
-    else{
-      
-    }
-  
-  }
-  else{
-    
-  }
 }
 
-char decode_hamming(){
-  
+char Hamming47_rx(){
+  Serial.println("Recieved byte: %x", rx_buff);
+  S1 = bitRead(rx_buff, P1_bit) ^ bitRead(rx_buff, D1_bit) ^ bitRead(rx_buff, D2_bit) ^ bitRead(rx_buff, D4_bit);
+  S2 = bitRead(rx_buff, P2_bit) ^ bitRead(rx_buff, D1_bit) ^ bitRead(rx_buff, D3_bit) ^ bitRead(rx_buff, D4_bit);
+  S3 = bitRead(rx_buff, P3_bit) ^ bitRead(rx_buff, D2_bit) ^ bitRead(rx_buff, D3_bit) ^ bitRead(rx_buff, D4_bit);
+  int S = (S3 << 2) | (S2 << 1) | S1;
+  if (S>0){
+    int index = 7-(S);
+    rx_buff = rx_buff ^ (1 << index);
+    Serial.println("Fixed byte: %x", rx_buff);
+  }
+  char data = (bitRead(rx_buff, D1_bit) << 3) | (bitRead(rx_buff, D2_bit) << 2) | (bitRead(rx_buff, D3_bit) << 1) | bitRead(rx_buff, D4_bit);
+  return data;
 }
 
 void setup()
