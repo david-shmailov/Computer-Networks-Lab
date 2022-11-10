@@ -12,6 +12,8 @@ const unsigned long BIT_TIME = 20;
 const int STOP_BIT_SETTING = 3; // 1 is 2 , 1.5 is 3 , 2 is 4
 const int STOP_BIT_TIME = (STOP_BIT_SETTING*BIT_TIME) >> 1; 
 const unsigned long half_BIT_TIME = BIT_TIME >> 1;
+
+
 const unsigned long quarter_BIT_TIME = BIT_TIME >> 2;
 const unsigned long wait_max = 100*BIT_TIME;
 const int buffer_size = 8;
