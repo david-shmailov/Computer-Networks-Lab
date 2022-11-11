@@ -8,7 +8,7 @@
 
 
 // usart_tx global variables
-const int BIT_TIME = 1;
+const int BIT_TIME = 20;
 const int half_BIT_TIME = BIT_TIME >> 1;
 const int wait_max = 100*BIT_TIME;
 const int buffer_size = 12;
@@ -79,12 +79,14 @@ void usart_tx(){
 void usart_rx(){
   clk_in_curr = digitalRead(CLK_IN_PIN);
   if (clk_in_prev > clk_in_curr){
+    layer_1_rx_busy=1;
     rx_bit = digitalRead(RX_PIN);
     bitWrite(rx_buff, rx_count, rx_bit);
     rx_count ++;
     clk_in_prev = clk_in_curr;
     if (rx_count == buffer_size){
       rx_count = 0;
+      layer_1_rx_busy=0;
     }
   }else{
     clk_in_prev = clk_in_curr;
@@ -123,8 +125,21 @@ void link_layer_rx(){
     if (l2_rx_counter<13){
       int L2_rx_temp =CRC4_rx();
       if (rx_error_flag==1){
-        Serial.print("Error in char #%c",l2_rx_counter)
+        Serial.print("Error in char #");
+        Serial.print(l2_rx_counter);
+        Serial.print("\n");
+        l2_rx_buff[l2_rx_counter]=rx_buff;
+        rx_error_flag=0;
       }
+      else{
+        l2_rx_buff[l2_rx_counter]=rx_buff;
+      }
+      l2_rx_counter++;
+    }
+    else{
+      Serial.print("The Recieved string is:");
+      Serial.print(l2_rx_buff);
+      Serial.print("\n");
     }
   }
     
@@ -161,8 +176,15 @@ void setup()
 
 void loop()
 {
+  link_layer_tx();
+  link_layer_rx();
   usart_tx();
   usart_rx();
 }
+
+
+
+
+
 
 
