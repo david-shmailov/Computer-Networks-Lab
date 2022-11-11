@@ -13,7 +13,7 @@
 #define D2_bit 2
 #define D3_bit 1
 #define D4_bit 0
-#define polynom 0b0000100110000000
+#define polynom 0b100110000000
 #define poly_degree  4
 
 #define with_error 0
@@ -25,6 +25,7 @@
 #define wait_max          100*BIT_TIME
 #define wait_min          10*BIT_TIME
 #define buffer_size       12
+#define data_size         buffer_size - poly_degree
 
 typedef enum {ACTIVE, PASSIVE} state_type;
 unsigned long start_time = 0;
@@ -127,13 +128,17 @@ void link_layer_tx(){
 
 void link_layer_rx(){
   if (layer_1_rx_busy < layer_1_rx_busy_prev){
-    if (l2_rx_counter<13){
-      int L2_rx_temp =CRC4_rx();
+    if (l2_rx_counter < 12){
+      char L2_rx_temp = CRC4_rx();
       if (rx_error_flag){
         Serial.print("Error in char #");
         Serial.print(l2_rx_counter);
         Serial.print("\n");
         rx_error_flag=0;
+      }else{
+        Serial.print("Received char: ");
+        Serial.print(L2_rx_temp);
+        Serial.print("\n");
       }
       l2_rx_buff[l2_rx_counter]=L2_rx_temp;
       l2_rx_counter++;
@@ -149,16 +154,19 @@ void link_layer_rx(){
 
 int CRC4_tx(){
   int tx_crc_temp = tx_byte_crc;
+  int dividend = tx_byte_crc;
   tx_crc_temp = tx_crc_temp << poly_degree;
   int tx_denom = polynom;
-  for (int crc_loop_count = 0;crc_loop_count < 7;crc_loop_count++){
-    if (bitRead(tx_byte_crc,11-crc_loop_count)==1){
+  for (int crc_loop_count = 0; dividend != 0 ;crc_loop_count++){
+    if (bitRead(tx_crc_temp, buffer_size -1 -crc_loop_count)==1){
       tx_crc_temp = tx_crc_temp^tx_denom;
+      dividend = tx_crc_temp >> poly_degree;
       tx_denom = tx_denom >> 1;
     }
     else{
       tx_denom = tx_denom >> 1;
     }
+
   }
   int result = (tx_byte_crc << poly_degree) | tx_crc_temp;
   Serial.print("Sending  bits: ");
@@ -172,10 +180,12 @@ char CRC4_rx(){
   Serial.print("Received bits: ");
   Serial.print(rx_crc_temp,BIN);
   Serial.print("\n");
+  int dividend = l1_rx_buffer >> poly_degree;
   int rx_denom = polynom;
-  for (int crc_loop_count = 0; crc_loop_count< 7;crc_loop_count++){
-    if (bitRead(l1_rx_buffer,11-crc_loop_count)==1){
+  for (int crc_loop_count = 0; dividend != 0;crc_loop_count++){
+    if (bitRead(rx_crc_temp,11-crc_loop_count)==1){
       rx_crc_temp = rx_crc_temp^rx_denom;
+      dividend = rx_crc_temp >> poly_degree;
       rx_denom = rx_denom>>1;
     }
     else{
