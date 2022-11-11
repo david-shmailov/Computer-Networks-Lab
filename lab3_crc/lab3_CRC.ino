@@ -4,13 +4,14 @@
 #define RX_PIN 3
 #define CLK_OUT_PIN 4
 #define CLK_IN_PIN 5
+#define L2_BUFFER_SIZE 13 
 
 
 // usart_tx global variables
 const int BIT_TIME = 1;
 const int half_BIT_TIME = BIT_TIME >> 1;
 const int wait_max = 100*BIT_TIME;
-const int buffer_size = 8;
+const int buffer_size = 12;
 
 typedef enum {ACTIVE, PASSIVE} state_type;
 unsigned long start_time = 0;
@@ -26,8 +27,23 @@ state_type state = ACTIVE;
 int clk_in_prev = 0;
 int clk_in_curr = 0;
 int rx_bit;
-int rx_buff = 0;
+int16_t rx_buff = 0;
 int rx_count = 0; 
+
+
+//layer2 tx global variables
+int tx_busy = 1;
+int layer_2_tx_request = 0;
+int layer2_tx_buffer_counter = 0;
+char l2_tx_buff [L2_BUFFER_SIZE] = "DAVID_NERIYA";
+int16_t tx_byte_crc = 0;
+
+//layer2 Rx global variables
+int layer_1_rx_busy;
+int l2_rx_counter = 0;
+int l2_buffer_pos;
+char l2_rx_buff [L2_BUFFER_SIZE];
+int rx_error_flag=0;
 
 
 
@@ -77,11 +93,61 @@ void usart_rx(){
   
 
 void link_layer_tx(){
-  
+  if (tx_busy == 0){
+    if (layer2_tx_buffer_counter<=L2_BUFFER_SIZE){
+      layer_2_tx_request=1;
+      tx_byte_crc = l2_tx_buff[layer2_tx_buffer_counter];
+      tx_buff = CRC4_tx();
+    }
+  }
+}
+
+char CRC4_tx(){
+  int16_t tx_crc_temp = tx_byte_crc;
+  tx_crc_temp<<4;
+  int16_t tx_denom =0b0000100110000000;
+  for (int crc_loop_count = 0;crc_loop_count<=6;crc_loop_count++){
+    if (bitRead(tx_byte_crc,11-crc_loop_count)==1){
+      tx_crc_temp = tx_crc_temp^tx_denom;
+      tx_denom>>1;
+    }
+    else{
+      tx_denom >>1;
+    }
+  }
+  return (tx_byte_crc<<4)|tx_crc_temp;
 }
 
 void link_layer_rx(){
-  
+  if (layer_1_rx_busy==0){
+    if (l2_rx_counter<13){
+      int L2_rx_temp =CRC4_rx();
+      if (rx_error_flag==1){
+        Serial.print("Error in char #%c",l2_rx_counter)
+      }
+    }
+  }
+    
+}
+char CRC4_rx(){
+  int16_t rx_crc_temp = rx_buff;
+  int16_t rx_denom =0b0000100110000000;
+  for (int crc_loop_count = 0;crc_loop_count<=6;crc_loop_count++){
+    if (bitRead(rx_buff,11-crc_loop_count)==1){
+      rx_crc_temp = rx_crc_temp^rx_denom;
+      rx_denom>>1;
+    }
+    else{
+      rx_denom >>1;
+    }
+  }
+  if (rx_crc_temp==0){
+    return rx_buff;
+  }
+  else{
+    rx_error_flag=1;
+    return 0;
+  }
 }
 
 
