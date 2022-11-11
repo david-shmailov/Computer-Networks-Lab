@@ -120,7 +120,7 @@ void usart_rx(){
 
 void link_layer_tx(){
   if (!layer_1_tx_busy && !layer_2_tx_request){
-    if (layer2_tx_buffer_counter<=L2_BUFFER_SIZE){
+    if (layer2_tx_buffer_counter <= L2_BUFFER_SIZE){
       if (tx_half_byte_lsb){
         tx_byte_hamming = l2_tx_buff[layer2_tx_buffer_counter];
         l1_tx_buffer = Hamming47_tx();
