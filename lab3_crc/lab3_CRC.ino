@@ -17,7 +17,7 @@
 #define poly_degree  4
 
 #define with_error 0
-
+#define num_of_errors 1
 
 // usart_tx global variables
 #define BIT_TIME          20
@@ -131,13 +131,19 @@ void link_layer_rx(){
     if (l2_rx_counter < 12){
       char L2_rx_temp = CRC4_rx();
       if (rx_error_flag){
-        Serial.print("Error in char #");
+        Serial.print("Received char: ");
+        Serial.print(L2_rx_temp);
+        Serial.print("\n");
+        Serial.print("CRC ERROR #");
         Serial.print(l2_rx_counter);
         Serial.print("\n");
         rx_error_flag=0;
       }else{
         Serial.print("Received char: ");
         Serial.print(L2_rx_temp);
+        Serial.print("\n");
+        Serial.print("CRC Pass #");
+        Serial.print(l2_rx_counter);
         Serial.print("\n");
       }
       l2_rx_buff[l2_rx_counter]=L2_rx_temp;
@@ -169,17 +175,24 @@ int CRC4_tx(){
 
   }
   int result = (tx_byte_crc << poly_degree) | tx_crc_temp;
-  Serial.print("Sending  bits: ");
-  Serial.print(result,BIN);
-  Serial.print("\n");
+  if (with_error){
+    int errors = 0;
+    for (int i = 0; i < num_of_errors; i++){
+      int bit_to_flip = random(0,buffer_size-1);
+      int current_bit = bitRead(errors,bit_to_flip);
+      while (current_bit == 1){
+        bit_to_flip = random(0,buffer_size-1);
+        current_bit = bitRead(errors,bit_to_flip);
+      }
+      bitSet(errors, bit_to_flip);
+    }
+    result = result ^ errors;
+  }
   return result;
 }
 
 char CRC4_rx(){
   int rx_crc_temp = l1_rx_buffer;
-  Serial.print("Received bits: ");
-  Serial.print(rx_crc_temp,BIN);
-  Serial.print("\n");
   int dividend = l1_rx_buffer >> poly_degree;
   int rx_denom = polynom;
   for (int crc_loop_count = 0; dividend != 0;crc_loop_count++){
@@ -192,13 +205,10 @@ char CRC4_rx(){
       rx_denom = rx_denom >>1;
     }
   }
-  if (rx_crc_temp==0){
-    return (l1_rx_buffer >> poly_degree);
-  }
-  else{
+  if (rx_crc_temp != 0){
     rx_error_flag=1;
-    return 0;
   }
+  return (l1_rx_buffer >> poly_degree);
 }
 
 

@@ -15,14 +15,15 @@
 #define D4_bit 0
 
 #define with_error 0
+#define num_of_errors 1
 
 
 // usart_tx global variables
-#define BIT_TIME          20
+#define BIT_TIME          20 // should be an even number
 #define half_BIT_TIME     BIT_TIME >> 1
 #define wait_max          100*BIT_TIME
 #define wait_min          10*BIT_TIME
-#define buffer_size       8
+#define buffer_size       7
 
 typedef enum {ACTIVE, PASSIVE} state_type;
 unsigned long start_time = 0;
@@ -175,11 +176,20 @@ char Hamming47_tx(){
       bitWrite(temp_l2,D3_bit,bitRead(tx_byte_hamming,1));
       bitWrite(temp_l2,D4_bit,bitRead(tx_byte_hamming,0));
       Serial.print("Sending  byte: ");
-      Serial.print(temp_l2,BIN);
+      Serial.print(temp_l2, BIN);
       Serial.print("\n");
       if (with_error){
-        int bit_to_flip = random(0,6);
-        bitWrite(temp_l2, bit_to_flip ,!bitRead(temp_l2,bit_to_flip));
+        int errors = 0;
+        for (int i = 0; i < num_of_errors; i++){
+          int bit_to_flip = random(0,buffer_size-1);
+          int current_bit = bitRead(errors,bit_to_flip);
+          while (current_bit == 1){
+            bit_to_flip = random(0,buffer_size-1);
+            current_bit = bitRead(errors,bit_to_flip);
+          }
+          bitSet(errors, bit_to_flip);
+        }
+        temp_l2 = temp_l2 ^ errors;
       }
       return temp_l2;
 }
