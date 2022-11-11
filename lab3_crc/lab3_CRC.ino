@@ -124,22 +124,6 @@ void link_layer_tx(){
   }
 }
 
-int CRC4_tx(){
-  int tx_crc_temp = tx_byte_crc;
-  tx_crc_temp = tx_crc_temp << poly_degree;
-  int tx_denom = polynom;
-  for (int crc_loop_count = 0;crc_loop_count < 7;crc_loop_count++){
-    if (bitRead(tx_byte_crc,11-crc_loop_count)==1){
-      tx_crc_temp = tx_crc_temp^tx_denom;
-      tx_denom = tx_denom >> 1;
-    }
-    else{
-      tx_denom = tx_denom >> 1;
-    }
-  }
-  int result = (tx_byte_crc << poly_degree) | tx_crc_temp;
-  return result;
-}
 
 void link_layer_rx(){
   if (layer_1_rx_busy < layer_1_rx_busy_prev){
@@ -163,8 +147,31 @@ void link_layer_rx(){
   layer_1_rx_busy_prev = layer_1_rx_busy; 
 }
 
+int CRC4_tx(){
+  int tx_crc_temp = tx_byte_crc;
+  tx_crc_temp = tx_crc_temp << poly_degree;
+  int tx_denom = polynom;
+  for (int crc_loop_count = 0;crc_loop_count < 7;crc_loop_count++){
+    if (bitRead(tx_byte_crc,11-crc_loop_count)==1){
+      tx_crc_temp = tx_crc_temp^tx_denom;
+      tx_denom = tx_denom >> 1;
+    }
+    else{
+      tx_denom = tx_denom >> 1;
+    }
+  }
+  int result = (tx_byte_crc << poly_degree) | tx_crc_temp;
+  Serial.print("Sending  bits: ");
+  Serial.print(result,BIN);
+  Serial.print("\n");
+  return result;
+}
+
 char CRC4_rx(){
   int rx_crc_temp = l1_rx_buffer;
+  Serial.print("Received bits: ");
+  Serial.print(rx_crc_temp,BIN);
+  Serial.print("\n");
   int rx_denom = polynom;
   for (int crc_loop_count = 0; crc_loop_count< 7;crc_loop_count++){
     if (bitRead(l1_rx_buffer,11-crc_loop_count)==1){
