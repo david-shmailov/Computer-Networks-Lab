@@ -12,6 +12,8 @@
 
 //L2
 #define DATA_SIZE 13
+#define CRC_size 4 //4 byte
+#define Header_size 4
 
 
 
@@ -58,6 +60,8 @@ int l1_rx_buffer = 0;
 int l1_rx_count = 0; 
 
 //layer2_tx global variables
+int num_bad_frame = 0;
+int num_of_frame = 0;
 int layer_1_tx_busy = 0;
 int layer_2_tx_request =0 ;
 typedef enum {FIRST, SECOND} l2_state_type;
@@ -157,24 +161,58 @@ void link_layer_rx(){
           Rx_frame.length=l1_rx_buffer;
           l2_rx_counter++;
         }
-        else if ((l2_rx_counter<4+Rx_frame.length)&&(l2_rx_counter>=4))//payload
+        else if ((l2_rx_counter<Header_size+Rx_frame.length)&&(l2_rx_counter>=Header_size))//payload
         {
           Rx_frame.payload[rx_payload_counter]=l1_rx_buffer;
           rx_payload_counter++;
           l2_rx_counter++;
         }
-        else if (l2_rx_counter>= 4 + Rx_frame.length)//CRC
+        else if ((l2_rx_counter>= Header_size + Rx_frame.length)&&(l2_rx_counter<Rx_frame.length + Header_size + CRC_size))//CRC
         {
-          if (rx_crc_counter<4){
+          if (rx_crc_counter<CRC_size){
             Rx_frame.crc=l1_rx_buffer;
             Rx_frame.crc<<8;
             l2_rx_counter++;
             rx_crc_counter++;
           }
         }
+        else if (l2_rx_counter==Header_size + Rx_frame.length + CRC_size){//EXIT
+          l2_rx_state = Check;
+          l2_rx_counter = 0;
+          rx_crc_counter = 0;
+          rx_payload_counter = 0;
+        }
+
         
       }
       
+    case Check:
+      uint8_t complete_array[100];
+      complete_array[0] = Rx_frame.destination_adress;
+      complete_array[1] = Rx_frame.source_adress;
+      complete_array[2] = Rx_frame.frame_type;
+      complete_array[3] = Rx_frame.length;
+      for(int i = 0; i < Rx_frame.length; i++){
+        complete_array[i+4] = Rx_frame.payload[i];
+      }
+      for(int i = 0; i < CRC_size; i++){
+        int shift = 24 - 8*i ;
+        complete_array[i+Header_size+Rx_frame.length] = Rx_frame.crc>>(shift);
+      }
+      int32_t Res = calculateCRC(complete_array, Header_size + Rx_frame.length + CRC_size);
+      num_of_frame++;
+      if (Res == 0){
+
+      }
+      else{
+        num_bad_frame++;
+      }
+    case Ack_Send:
+      // kaki
+    case Idle:
+      if(layer_1_rx_busy){
+        l2_rx_state = Recieve;
+      }
 
   }
   
