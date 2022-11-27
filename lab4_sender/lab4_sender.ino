@@ -29,10 +29,13 @@ typedef struct Frame{
   uint8_t destination_adress;
   uint8_t source_adress;
   uint8_t frame_type;
+  uint8_t length;
   uint8_t* payload;
   uint32_t crc;
 } Frame;
 Frame F1;
+int rx_l2_count = 0;
+Frame Rx_frame;
 
 
 typedef enum {ACTIVE, PASSIVE} state_type;
@@ -44,6 +47,7 @@ int l1_tx_count = 0;
 long l1_tx_wait = 0;
 int l1_tx_bit;
 state_type l1_tx_state = PASSIVE;
+
 
 // usart_Rx global variables
 int layer_1_rx_busy =0;
@@ -63,6 +67,10 @@ char l2_tx_buff [DATA_SIZE] = "DAVID_NERIYA";
 
 
 // L2 RX global variables
+typedef enum {Recieve, Check, Ack_Send,Idle} Rx_type;
+Rx_type l2_rx_state = Recieve;
+int rx_payload_counter = 0;
+int rx_crc_counter = 0;
 int layer_1_rx_busy_prev;
 int l2_rx_counter = 0;
 int l2_buffer_pos;
@@ -127,7 +135,50 @@ void link_layer_tx(){
 
 
 void link_layer_rx(){
+  switch(l2_rx_state){
+    case Recieve: //save each segment in the designated space in Rx_frame
+      if(!layer_1_rx_busy){
+        if(l2_rx_counter==0){//destination adress
+          Rx_frame.destination_adress=l1_rx_buffer;
+          l2_rx_counter++;
+        }
+        else if (l2_rx_counter==1)//source adress
+        {
+          Rx_frame.source_adress=l1_rx_buffer;
+          l2_rx_counter++;
+        }
+        else if (l2_rx_counter==2)//frame type
+        {
+          Rx_frame.frame_type=l1_rx_buffer;
+          l2_rx_counter++;
+        }
+        else if (l2_rx_counter==3)//payload length
+        {
+          Rx_frame.length=l1_rx_buffer;
+          l2_rx_counter++;
+        }
+        else if ((l2_rx_counter<4+Rx_frame.length)&&(l2_rx_counter>=4))//payload
+        {
+          Rx_frame.payload[rx_payload_counter]=l1_rx_buffer;
+          rx_payload_counter++;
+          l2_rx_counter++;
+        }
+        else if (l2_rx_counter>= 4 + Rx_frame.length)//CRC
+        {
+          if (rx_crc_counter<4){
+            Rx_frame.crc=l1_rx_buffer;
+            Rx_frame.crc<<8;
+            l2_rx_counter++;
+            rx_crc_counter++;
+          }
+        }
+        
+      }
+      
+
+  }
   
+
 }
 
 
