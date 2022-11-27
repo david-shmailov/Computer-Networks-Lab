@@ -5,28 +5,38 @@
 #define RX_PIN 3
 #define CLK_OUT_PIN 4
 #define CLK_IN_PIN 5
-#define L2_BUFFER_SIZE 13 
-#define L2_COUNT_LIMIT L2_BUFFER_SIZE<<1
-#define P1_bit 6
-#define P2_bit 5
-#define D1_bit 4
-#define P3_bit 3
-#define D2_bit 2
-#define D3_bit 1
-#define D4_bit 0
-#define polynom 0b100110000000
-#define poly_degree  4
+
 
 #define with_error 0
 #define num_of_errors 1
+
+//L2
+#define DATA_SIZE 13
+
+
 
 // usart_tx global variables
 #define BIT_TIME          20
 #define half_BIT_TIME     BIT_TIME >> 1
 #define wait_max          100*BIT_TIME
 #define wait_min          10*BIT_TIME
-#define buffer_size       12
-#define data_size         buffer_size - poly_degree
+#define buffer_size       8
+
+int sender=1;
+
+
+typedef struct Frame{
+  uint8_t destination_adress;
+  uint8_t source_adress;
+  uint8_t frame_type;
+  uint8_t length;
+  uint8_t* payload;
+  uint32_t crc;
+} Frame;
+Frame F1;
+int rx_l2_count = 0;
+Frame Rx_frame;
+
 
 typedef enum {ACTIVE, PASSIVE} state_type;
 unsigned long start_time = 0;
@@ -37,6 +47,7 @@ int l1_tx_count = 0;
 long l1_tx_wait = 0;
 int l1_tx_bit;
 state_type l1_tx_state = PASSIVE;
+
 
 // usart_Rx global variables
 int layer_1_rx_busy =0;
@@ -52,15 +63,18 @@ int layer_2_tx_request =0 ;
 typedef enum {FIRST, SECOND} l2_state_type;
 l2_state_type half_state = FIRST;
 int layer2_tx_buffer_counter = 0;
-char l2_tx_buff [L2_BUFFER_SIZE] = "DAVID_NERIYA";
-int tx_byte_crc = 0;
+char l2_tx_buff [DATA_SIZE] = "DAVID_NERIYA";
 
 
 // L2 RX global variables
+typedef enum {Recieve, Check, Ack_Send,Idle} Rx_type;
+Rx_type l2_rx_state = Recieve;
+int rx_payload_counter = 0;
+int rx_crc_counter = 0;
 int layer_1_rx_busy_prev;
 int l2_rx_counter = 0;
 int l2_buffer_pos;
-char l2_rx_buff [L2_BUFFER_SIZE];
+char l2_rx_buff [DATA_SIZE];
 int rx_error_flag=0;
 
 
@@ -116,100 +130,55 @@ void usart_rx(){
   
 
 void link_layer_tx(){
-  if (!layer_1_tx_busy && !layer_2_tx_request){
-    if (layer2_tx_buffer_counter<=L2_BUFFER_SIZE){
-      tx_byte_crc = l2_tx_buff[layer2_tx_buffer_counter];
-      l1_tx_buffer = CRC4_tx();
-      layer2_tx_buffer_counter++;
-      layer_2_tx_request=1;
-    }
-  }
+  
 }
 
 
 void link_layer_rx(){
-  if (layer_1_rx_busy < layer_1_rx_busy_prev){
-    if (l2_rx_counter < 12){
-      char L2_rx_temp = CRC4_rx();
-      if (rx_error_flag){
-        Serial.print("Received char: ");
-        Serial.print(L2_rx_temp);
-        Serial.print("\n");
-        Serial.print("CRC ERROR #");
-        Serial.print(l2_rx_counter);
-        Serial.print("\n");
-        rx_error_flag=0;
-      }else{
-        Serial.print("Received char: ");
-        Serial.print(L2_rx_temp);
-        Serial.print("\n");
-        Serial.print("CRC Pass #");
-        Serial.print(l2_rx_counter);
-        Serial.print("\n");
+  switch(l2_rx_state){
+    case Recieve: //save each segment in the designated space in Rx_frame
+      if(!layer_1_rx_busy){
+        if(l2_rx_counter==0){//destination adress
+          Rx_frame.destination_adress=l1_rx_buffer;
+          l2_rx_counter++;
+        }
+        else if (l2_rx_counter==1)//source adress
+        {
+          Rx_frame.source_adress=l1_rx_buffer;
+          l2_rx_counter++;
+        }
+        else if (l2_rx_counter==2)//frame type
+        {
+          Rx_frame.frame_type=l1_rx_buffer;
+          l2_rx_counter++;
+        }
+        else if (l2_rx_counter==3)//payload length
+        {
+          Rx_frame.length=l1_rx_buffer;
+          l2_rx_counter++;
+        }
+        else if ((l2_rx_counter<4+Rx_frame.length)&&(l2_rx_counter>=4))//payload
+        {
+          Rx_frame.payload[rx_payload_counter]=l1_rx_buffer;
+          rx_payload_counter++;
+          l2_rx_counter++;
+        }
+        else if (l2_rx_counter>= 4 + Rx_frame.length)//CRC
+        {
+          if (rx_crc_counter<4){
+            Rx_frame.crc=l1_rx_buffer;
+            Rx_frame.crc<<8;
+            l2_rx_counter++;
+            rx_crc_counter++;
+          }
+        }
+        
       }
-      l2_rx_buff[l2_rx_counter]=L2_rx_temp;
-      l2_rx_counter++;
-    }
-    else{
-      Serial.print("The Recieved string is: ");
-      Serial.print(l2_rx_buff);
-      Serial.print("\n");
-    }
-  }
-  layer_1_rx_busy_prev = layer_1_rx_busy; 
-}
-
-int CRC4_tx(){
-  int tx_crc_temp = tx_byte_crc;
-  int dividend = tx_byte_crc;
-  tx_crc_temp = tx_crc_temp << poly_degree;
-  int tx_denom = polynom;
-  for (int crc_loop_count = 0; dividend != 0 ;crc_loop_count++){
-    if (bitRead(tx_crc_temp, buffer_size -1 -crc_loop_count)==1){
-      tx_crc_temp = tx_crc_temp^tx_denom;
-      dividend = tx_crc_temp >> poly_degree;
-      tx_denom = tx_denom >> 1;
-    }
-    else{
-      tx_denom = tx_denom >> 1;
-    }
+      
 
   }
-  int result = (tx_byte_crc << poly_degree) | tx_crc_temp;
-  if (with_error){
-    int errors = 0;
-    for (int i = 0; i < num_of_errors; i++){
-      int bit_to_flip = random(0,buffer_size-1);
-      int current_bit = bitRead(errors,bit_to_flip);
-      while (current_bit == 1){
-        bit_to_flip = random(0,buffer_size-1);
-        current_bit = bitRead(errors,bit_to_flip);
-      }
-      bitSet(errors, bit_to_flip);
-    }
-    result = result ^ errors;
-  }
-  return result;
-}
+  
 
-char CRC4_rx(){
-  int rx_crc_temp = l1_rx_buffer;
-  int dividend = l1_rx_buffer >> poly_degree;
-  int rx_denom = polynom;
-  for (int crc_loop_count = 0; dividend != 0;crc_loop_count++){
-    if (bitRead(rx_crc_temp,11-crc_loop_count)==1){
-      rx_crc_temp = rx_crc_temp^rx_denom;
-      dividend = rx_crc_temp >> poly_degree;
-      rx_denom = rx_denom>>1;
-    }
-    else{
-      rx_denom = rx_denom >>1;
-    }
-  }
-  if (rx_crc_temp != 0){
-    rx_error_flag=1;
-  }
-  return (l1_rx_buffer >> poly_degree);
 }
 
 
@@ -220,6 +189,14 @@ void setup()
   pinMode(CLK_OUT_PIN, OUTPUT);
   pinMode(CLK_IN_PIN, INPUT);
   Serial.begin(9600);
+  if (sender){
+    F1.destination_adress=0x16;
+    F1.source_adress=0x6;
+  }
+  else{
+    F1.destination_adress=0x6;
+    F1.source_adress=0x16;
+  }
 }
 
 void loop()
