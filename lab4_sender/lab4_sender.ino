@@ -22,6 +22,19 @@
 #define wait_min          10*BIT_TIME
 #define buffer_size       8
 
+int sender=1;
+
+
+typedef struct Frame{
+  uint8_t destination_adress;
+  uint8_t source_adress;
+  uint8_t frame_type;
+  uint8_t* payload;
+  uint32_t crc;
+} Frame;
+Frame F1;
+
+
 typedef enum {ACTIVE, PASSIVE} state_type;
 unsigned long start_time = 0;
 unsigned long curr_time = 0;
@@ -125,6 +138,14 @@ void setup()
   pinMode(CLK_OUT_PIN, OUTPUT);
   pinMode(CLK_IN_PIN, INPUT);
   Serial.begin(9600);
+  if (sender){
+    F1.destination_adress=0x16;
+    F1.source_adress=0x6;
+  }
+  else{
+    F1.destination_adress=0x6;
+    F1.source_adress=0x16;
+  }
 }
 
 void loop()
