@@ -95,10 +95,7 @@ uint32_t calculateCRC(const char * payload, size_t payload_size){
         return checksum; 
     }
     else{
-        int random_number = random(0,100);
-        if (random_number <= 10){
-            checksum = checksum ^ 4;    
-            }
+        
         return checksum;
     }
 }

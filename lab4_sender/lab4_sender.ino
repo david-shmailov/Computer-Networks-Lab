@@ -1,6 +1,7 @@
 // C code
 //
 #include "EthernetLab.h"
+#include "lab4.h"
 #define TX_PIN 2
 #define RX_PIN 3
 #define CLK_OUT_PIN 4
@@ -12,7 +13,9 @@
 
 //L2
 #define DATA_SIZE 13
-
+#define MAX_FRAME_SIZE 100
+#define FRAME_HEADER_SIZE 4
+#define CRC_SIZE 4
 
 
 // usart_tx global variables
@@ -22,21 +25,19 @@
 #define wait_min          10*BIT_TIME
 #define buffer_size       8
 
-int sender=1;
-
-
-typedef struct Frame{
-  uint8_t destination_adress;
-  uint8_t source_adress;
+struct Frame{
+  uint8_t destination_address;
+  uint8_t source_address;
   uint8_t frame_type;
   uint8_t length;
   uint8_t* payload;
   uint32_t crc;
-} Frame;
-Frame F1;
-int rx_l2_count = 0;
-Frame Rx_frame;
+};
 
+int rx_l2_count = 0;
+struct Frame TX_frame;
+struct Frame RX_frame;
+int sender=1;
 
 typedef enum {ACTIVE, PASSIVE} state_type;
 unsigned long start_time = 0;
@@ -60,23 +61,16 @@ int l1_rx_count = 0;
 //layer2_tx global variables
 int layer_1_tx_busy = 0;
 int layer_2_tx_request =0 ;
-typedef enum {FIRST, SECOND} l2_state_type;
-l2_state_type half_state = FIRST;
-int layer2_tx_buffer_counter = 0;
-char l2_tx_buff [DATA_SIZE] = "DAVID_NERIYA";
-
-
-// L2 RX global variables
-typedef enum {Recieve, Check, Ack_Send,Idle} Rx_type;
-Rx_type l2_rx_state = Recieve;
-int rx_payload_counter = 0;
-int rx_crc_counter = 0;
-int layer_1_rx_busy_prev;
-int l2_rx_counter = 0;
-int l2_buffer_pos;
-char l2_rx_buff [DATA_SIZE];
-int rx_error_flag=0;
-
+typedef enum {TRANSMITTING, IDLE} l2_state_type;
+typedef enum {DST_ADDR, SRC_ADDR, TYPE, LENGTH, PAYLOAD, CRC} l2_frame_state;
+l2_state_type l2_tx_state = IDLE;
+l2_frame_state l2_tx_frame_state = DST_ADDR;
+int layer2_tx_counter = 0;
+char *payload = "DAVID_NERIYA";
+uint8_t array2send[MAX_FRAME_SIZE];
+int L2_build_counter;
+int frame_size;
+int shift;
 
 
 void usart_tx(){
@@ -127,58 +121,64 @@ void usart_rx(){
   clk_in_prev = clk_in_curr;
   
 }
-  
+
+void build_tx_frame(){
+    TX_frame.destination_address = 0x06;
+    TX_frame.source_address = 0x16;
+    TX_frame.frame_type = 0x00;
+    TX_frame.length = strlen(payload);
+    TX_frame.payload = payload;
+    build_array2send();
+}
+
+
+void build_array2send(){
+    for (L2_build_counter = 0; L2_build_counter < FRAME_HEADER_SIZE; L2_build_counter++){
+      array2send[L2_build_counter] = *((uint8_t *) &TX_frame + L2_build_counter);
+    }
+    for (L2_build_counter = 0; L2_build_counter < TX_frame.length; L2_build_counter++){
+      array2send[L2_build_counter + FRAME_HEADER_SIZE] = TX_frame.payload[L2_build_counter];
+    }
+    // calculate CRC
+    frame_size = FRAME_HEADER_SIZE + TX_frame.length;
+    TX_frame.crc = calculateCRC(array2send, frame_size-1);
+    // add CRC to array2send
+    for (L2_build_counter = 0; L2_build_counter<CRC_SIZE; L2_build_counter++){
+        shift = 24 - L2_build_counter*8;
+        array2send[frame_size+L2_build_counter] = (TX_frame.crc >> shift ) & 0xFF; // take the byte from the crc
+    }
+    // update frame size
+    frame_size += CRC_SIZE;
+}
+
+
 
 void link_layer_tx(){
-  
+    switch (l2_tx_state)
+    {
+        case IDLE:
+            /* code */
+            break;
+        case TRANSMITTING:
+            if (!layer_1_tx_busy && !layer_2_tx_request){
+                if (layer2_tx_counter < frame_size){
+                    l1_tx_buffer = array2send[layer2_tx_counter];
+                    layer2_tx_counter++;
+                    layer_2_tx_request = 1;
+                } else {
+                    l2_tx_state = IDLE;
+                    layer2_tx_counter = 0;
+                }
+            }
+            break;
+        default:
+            break;
+    }
 }
 
 
 void link_layer_rx(){
-  switch(l2_rx_state){
-    case Recieve: //save each segment in the designated space in Rx_frame
-      if(!layer_1_rx_busy){
-        if(l2_rx_counter==0){//destination adress
-          Rx_frame.destination_adress=l1_rx_buffer;
-          l2_rx_counter++;
-        }
-        else if (l2_rx_counter==1)//source adress
-        {
-          Rx_frame.source_adress=l1_rx_buffer;
-          l2_rx_counter++;
-        }
-        else if (l2_rx_counter==2)//frame type
-        {
-          Rx_frame.frame_type=l1_rx_buffer;
-          l2_rx_counter++;
-        }
-        else if (l2_rx_counter==3)//payload length
-        {
-          Rx_frame.length=l1_rx_buffer;
-          l2_rx_counter++;
-        }
-        else if ((l2_rx_counter<4+Rx_frame.length)&&(l2_rx_counter>=4))//payload
-        {
-          Rx_frame.payload[rx_payload_counter]=l1_rx_buffer;
-          rx_payload_counter++;
-          l2_rx_counter++;
-        }
-        else if (l2_rx_counter>= 4 + Rx_frame.length)//CRC
-        {
-          if (rx_crc_counter<4){
-            Rx_frame.crc=l1_rx_buffer;
-            Rx_frame.crc<<8;
-            l2_rx_counter++;
-            rx_crc_counter++;
-          }
-        }
-        
-      }
-      
-
-  }
-  
-
+    
 }
 
 
@@ -189,22 +189,42 @@ void setup()
   pinMode(CLK_OUT_PIN, OUTPUT);
   pinMode(CLK_IN_PIN, INPUT);
   Serial.begin(9600);
-  if (sender){
-    F1.destination_adress=0x16;
-    F1.source_adress=0x6;
-  }
-  else{
-    F1.destination_adress=0x6;
-    F1.source_adress=0x16;
-  }
+//   if (sender){
+//     F1.destination_adress=0x16;
+//     F1.source_adress=0x6;
+//   }
+//   else{
+//     F1.destination_adress=0x6;
+//     F1.source_adress=0x16;
+//   }
 }
 
 void loop()
 {
-  link_layer_tx();
-  link_layer_rx();
-  usart_tx();
-  usart_rx();
+//   link_layer_tx();
+//   link_layer_rx();
+//   usart_tx();
+//   usart_rx();
+    build_tx_frame();
+    Serial.print("TX ARRAY: \n");
+    for (int i=0; i<frame_size; i++){
+        Serial.print(array2send[i]);
+        Serial.print(" ");
+    }
+    Serial.print("\n");
+    Serial.print("TX CRC: ");
+    Serial.print(TX_frame.crc);
+    Serial.print("\n");
+    uint32_t crc = calculateCRC(array2send, frame_size-1);
+    Serial.print("RX ARRAY: \n");
+    for (int i=0; i<frame_size; i++){
+        Serial.print(array2send[i]);
+        Serial.print(" ");
+    }
+    Serial.print("\n");
+    Serial.print("RX CRC: ");
+    Serial.print(crc);
+    Serial.print("\n");
 }
 
 
