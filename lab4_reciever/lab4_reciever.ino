@@ -12,9 +12,11 @@
 
 //L2
 #define DATA_SIZE 13
-#define CRC_size 4 //4 byte
-#define Header_size 4
-
+#define CRC_SIZE 4 //4 byte
+#define FRAME_HEADER_SIZE 4
+#define MAX_FRAME_SIZE 100
+char ACK_P = 0x6;
+char* ACK =&ACK_P;
 
 
 // usart_tx global variables
@@ -27,18 +29,19 @@
 int sender=1;
 
 
-typedef struct Frame{
+struct Frame{
   uint8_t destination_adress;
   uint8_t source_adress;
   uint8_t frame_type;
   uint8_t length;
   uint8_t* payload;
   uint32_t crc;
-} Frame;
-Frame F1;
+};
+struct Frame F1;
 int rx_l2_count = 0;
-Frame Rx_frame;
-
+struct Frame Rx_frame;
+struct Frame Tx_frame;
+uint8_t ACK_frame[MAX_FRAME_SIZE];
 
 typedef enum {ACTIVE, PASSIVE} state_type;
 unsigned long start_time = 0;
@@ -68,6 +71,18 @@ typedef enum {FIRST, SECOND} l2_state_type;
 l2_state_type half_state = FIRST;
 int layer2_tx_buffer_counter = 0;
 char l2_tx_buff [DATA_SIZE] = "DAVID_NERIYA";
+typedef enum {TRANSMITTING, IDLE} l2_state_type;
+typedef enum {DST_ADDR, SRC_ADDR, TYPE, LENGTH, PAYLOAD, CRC} l2_frame_state;
+l2_state_type l2_tx_state = IDLE;
+l2_frame_state l2_tx_frame_state = DST_ADDR;
+int layer2_tx_counter = 0;
+char *payload = "DAVID_NERIYA";
+uint8_t array2send[MAX_FRAME_SIZE];
+int L2_build_counter;
+int frame_size;
+int shift;
+
+
 
 
 // L2 RX global variables
@@ -136,7 +151,32 @@ void usart_rx(){
 void link_layer_tx(){
   
 }
-
+void build_ACK_frame(){
+    ACK_frame.destination_address = 0x16;
+    ACK_frame.source_address = 0x06;
+    ACK_frame.frame_type = 0x00;
+    ACK_frame.length = 1;
+    ACK_frame.payload = ACK;
+    build_array2send();
+}
+void build_array2send(){
+    for (L2_build_counter = 0; L2_build_counter < FRAME_HEADER_SIZE; L2_build_counter++){
+      array2send[L2_build_counter] = *((uint8_t *) &ACK_frame + L2_build_counter);
+    }
+    for (L2_build_counter = 0; L2_build_counter < ACK_frame.length; L2_build_counter++){
+      array2send[L2_build_counter + FRAME_HEADER_SIZE] = ACK_frame.payload[L2_build_counter];
+    }
+    // calculate CRC
+    frame_size = FRAME_HEADER_SIZE + ACK_frame.length;
+    ACK_frame.crc = calculateCRC(array2send, frame_size-1);
+    // add CRC to array2send
+    for (L2_build_counter = 0; L2_build_counter<CRC_SIZE; L2_build_counter++){
+        shift = 24 - L2_build_counter*8;
+        array2send[frame_size+L2_build_counter] = (ACK_frame.crc >> shift ) & 0xFF; // take the byte from the crc
+    }
+    // update frame size
+    frame_size += CRC_SIZE;
+}
 
 void link_layer_rx(){
   switch(l2_rx_state){
@@ -161,22 +201,22 @@ void link_layer_rx(){
           Rx_frame.length=l1_rx_buffer;
           l2_rx_counter++;
         }
-        else if ((l2_rx_counter<Header_size+Rx_frame.length)&&(l2_rx_counter>=Header_size))//payload
+        else if ((l2_rx_counter<FRAME_HEADER_SIZE+Rx_frame.length)&&(l2_rx_counter>=FRAME_HEADER_SIZE))//payload
         {
           Rx_frame.payload[rx_payload_counter]=l1_rx_buffer;
           rx_payload_counter++;
           l2_rx_counter++;
         }
-        else if ((l2_rx_counter>= Header_size + Rx_frame.length)&&(l2_rx_counter<Rx_frame.length + Header_size + CRC_size))//CRC
+        else if ((l2_rx_counter>= FRAME_HEADER_SIZE + Rx_frame.length)&&(l2_rx_counter<Rx_frame.length + FRAME_HEADER_SIZE + CRC_SIZE))//CRC
         {
-          if (rx_crc_counter<CRC_size){
+          if (rx_crc_counter<CRC_SIZE){
             Rx_frame.crc=l1_rx_buffer;
             Rx_frame.crc<<8;
             l2_rx_counter++;
             rx_crc_counter++;
           }
         }
-        else if (l2_rx_counter==Header_size + Rx_frame.length + CRC_size){//EXIT
+        else if (l2_rx_counter==FRAME_HEADER_SIZE + Rx_frame.length + CRC_SIZE){//EXIT
           l2_rx_state = Check;
           l2_rx_counter = 0;
           rx_crc_counter = 0;
@@ -195,11 +235,11 @@ void link_layer_rx(){
       for(int i = 0; i < Rx_frame.length; i++){
         complete_array[i+4] = Rx_frame.payload[i];
       }
-      for(int i = 0; i < CRC_size; i++){
+      for(int i = 0; i < CRC_SIZE; i++){
         int shift = 24 - 8*i ;
-        complete_array[i+Header_size+Rx_frame.length] = Rx_frame.crc>>(shift);
+        complete_array[i+FRAME_HEADER_SIZE+Rx_frame.length] = Rx_frame.crc>>(shift);
       }
-      int32_t Res = calculateCRC(complete_array, Header_size + Rx_frame.length + CRC_size);
+      int32_t Res = calculateCRC(complete_array, FRAME_HEADER_SIZE + Rx_frame.length + CRC_SIZE);
       num_of_frame++;
       if (Res == 0){
 
@@ -235,6 +275,8 @@ void setup()
     F1.destination_adress=0x6;
     F1.source_adress=0x16;
   }
+  build_ACK_frame()
+  
 }
 
 void loop()
@@ -244,10 +286,4 @@ void loop()
   usart_tx();
   usart_rx();
 }
-
-
-
-
-
-
 
