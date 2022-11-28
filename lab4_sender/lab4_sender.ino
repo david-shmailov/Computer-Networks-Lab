@@ -12,7 +12,6 @@
 #define num_of_errors 1
 
 //L2
-#define DATA_SIZE 13
 #define MAX_FRAME_SIZE 100
 #define FRAME_HEADER_SIZE 4
 #define CRC_SIZE 4
@@ -66,11 +65,12 @@ typedef enum {DST_ADDR, SRC_ADDR, TYPE, LENGTH, PAYLOAD, CRC} l2_frame_state;
 l2_state_type l2_tx_state = IDLE;
 l2_frame_state l2_tx_frame_state = DST_ADDR;
 int layer2_tx_counter = 0;
-char *payload = "DAVID_NERIYA";
+
 uint8_t array2send[MAX_FRAME_SIZE];
 int L2_build_counter;
 int frame_size;
 int shift;
+char *payload = "DAVID_NERIYA";
 
 
 void usart_tx(){
@@ -127,6 +127,7 @@ void build_tx_frame(){
     TX_frame.source_address = 0x16;
     TX_frame.frame_type = 0x00;
     TX_frame.length = strlen(payload);
+    
     TX_frame.payload = payload;
     build_array2send();
 }
@@ -141,7 +142,7 @@ void build_array2send(){
     }
     // calculate CRC
     frame_size = FRAME_HEADER_SIZE + TX_frame.length;
-    TX_frame.crc = calculateCRC(array2send, frame_size-1);
+    TX_frame.crc = calculateCRC(array2send, frame_size);
     // add CRC to array2send
     for (L2_build_counter = 0; L2_build_counter<CRC_SIZE; L2_build_counter++){
         shift = 24 - L2_build_counter*8;
@@ -188,7 +189,7 @@ void setup()
   pinMode(RX_PIN, INPUT);
   pinMode(CLK_OUT_PIN, OUTPUT);
   pinMode(CLK_IN_PIN, INPUT);
-  Serial.begin(9600);
+  Serial.begin(115200);
 //   if (sender){
 //     F1.destination_adress=0x16;
 //     F1.source_adress=0x6;
@@ -208,23 +209,23 @@ void loop()
     build_tx_frame();
     Serial.print("TX ARRAY: \n");
     for (int i=0; i<frame_size; i++){
-        Serial.print(array2send[i]);
+        Serial.print( array2send[i]);
         Serial.print(" ");
     }
     Serial.print("\n");
     Serial.print("TX CRC: ");
-    Serial.print(TX_frame.crc);
+    Serial.print(TX_frame.crc, HEX);
     Serial.print("\n");
-    uint32_t crc = calculateCRC(array2send, frame_size-1);
-    Serial.print("RX ARRAY: \n");
-    for (int i=0; i<frame_size; i++){
-        Serial.print(array2send[i]);
-        Serial.print(" ");
-    }
-    Serial.print("\n");
-    Serial.print("RX CRC: ");
-    Serial.print(crc);
-    Serial.print("\n");
+    // uint32_t crc = calculateCRC(array2send, frame_size-CRC_SIZE);
+    // Serial.print("RX ARRAY: \n");
+    // for (int i=0; i<frame_size; i++){
+    //     Serial.print(array2send[i], HEX);
+    //     Serial.print(" ");
+    // }
+    // Serial.print("\n");
+    // Serial.print("RX CRC: ");
+    // Serial.print(crc, HEX);
+    // Serial.print("\n");
 }
 
 
