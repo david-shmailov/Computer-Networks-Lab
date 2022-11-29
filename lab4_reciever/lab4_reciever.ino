@@ -16,7 +16,7 @@
 #define FRAME_HEADER_SIZE 4
 #define MAX_FRAME_SIZE 100
 char ACK_P = 0x6;
-char* ACK =&ACK_P;
+char* ACK = &ACK_P; // pointer to a "string" of one char
 
 
 // usart_tx global variables
@@ -30,18 +30,20 @@ int sender=1;
 
 
 struct Frame{
-  uint8_t destination_adress;
-  uint8_t source_adress;
+  uint8_t destination_address;
+  uint8_t source_address;
   uint8_t frame_type;
   uint8_t length;
   uint8_t* payload;
   uint32_t crc;
 };
+
+
 struct Frame F1;
 int rx_l2_count = 0;
-struct Frame Rx_frame;
+struct Frame RX_frame;
 struct Frame Tx_frame;
-uint8_t ACK_frame[MAX_FRAME_SIZE];
+struct Frame ACK_frame;
 
 typedef enum {ACTIVE, PASSIVE} state_type;
 unsigned long start_time = 0;
@@ -149,7 +151,26 @@ void usart_rx(){
   
 
 void link_layer_tx(){
-  
+    switch (l2_tx_state)
+    {
+        case IDLE:
+            /* code */
+            break;
+        case TRANSMITTING:
+            if (!layer_1_tx_busy && !layer_2_tx_request){
+                if (layer2_tx_counter < frame_size){
+                    l1_tx_buffer = array2send[layer2_tx_counter];
+                    layer2_tx_counter++;
+                    layer_2_tx_request = 1;
+                } else {
+                    l2_tx_state = IDLE;
+                    layer2_tx_counter = 0;
+                }
+            }
+            break;
+        default:
+            break;
+    }
 }
 void build_ACK_frame(){
     ACK_frame.destination_address = 0x16;
@@ -159,6 +180,7 @@ void build_ACK_frame(){
     ACK_frame.payload = ACK;
     build_array2send();
 }
+
 void build_array2send(){
     for (L2_build_counter = 0; L2_build_counter < FRAME_HEADER_SIZE; L2_build_counter++){
       array2send[L2_build_counter] = *((uint8_t *) &ACK_frame + L2_build_counter);
@@ -180,43 +202,43 @@ void build_array2send(){
 
 void link_layer_rx(){
   switch(l2_rx_state){
-    case Recieve: //save each segment in the designated space in Rx_frame
+    case Recieve: //save each segment in the designated space in RX_frame
       if(!layer_1_rx_busy){
         if(l2_rx_counter==0){//destination adress
-          Rx_frame.destination_adress=l1_rx_buffer;
+          RX_frame.destination_address=l1_rx_buffer;
           l2_rx_counter++;
         }
         else if (l2_rx_counter==1)//source adress
         {
-          Rx_frame.source_adress=l1_rx_buffer;
+          RX_frame.source_address=l1_rx_buffer;
           l2_rx_counter++;
         }
         else if (l2_rx_counter==2)//frame type
         {
-          Rx_frame.frame_type=l1_rx_buffer;
+          RX_frame.frame_type=l1_rx_buffer;
           l2_rx_counter++;
         }
         else if (l2_rx_counter==3)//payload length
         {
-          Rx_frame.length=l1_rx_buffer;
+          RX_frame.length=l1_rx_buffer;
           l2_rx_counter++;
         }
-        else if ((l2_rx_counter<FRAME_HEADER_SIZE+Rx_frame.length)&&(l2_rx_counter>=FRAME_HEADER_SIZE))//payload
+        else if ((l2_rx_counter<FRAME_HEADER_SIZE+RX_frame.length)&&(l2_rx_counter>=FRAME_HEADER_SIZE))//payload
         {
-          Rx_frame.payload[rx_payload_counter]=l1_rx_buffer;
+          RX_frame.payload[rx_payload_counter]=l1_rx_buffer;
           rx_payload_counter++;
           l2_rx_counter++;
         }
-        else if ((l2_rx_counter>= FRAME_HEADER_SIZE + Rx_frame.length)&&(l2_rx_counter<Rx_frame.length + FRAME_HEADER_SIZE + CRC_SIZE))//CRC
+        else if ((l2_rx_counter>= FRAME_HEADER_SIZE + RX_frame.length)&&(l2_rx_counter<RX_frame.length + FRAME_HEADER_SIZE + CRC_SIZE))//CRC
         {
           if (rx_crc_counter<CRC_SIZE){
-            Rx_frame.crc=l1_rx_buffer;
-            Rx_frame.crc<<8;
+            RX_frame.crc=l1_rx_buffer;
+            RX_frame.crc<<8;
             l2_rx_counter++;
             rx_crc_counter++;
           }
         }
-        else if (l2_rx_counter==FRAME_HEADER_SIZE + Rx_frame.length + CRC_SIZE){//EXIT
+        else if (l2_rx_counter==FRAME_HEADER_SIZE + RX_frame.length + CRC_SIZE){//EXIT
           l2_rx_state = Check;
           l2_rx_counter = 0;
           rx_crc_counter = 0;
@@ -228,18 +250,18 @@ void link_layer_rx(){
       
     case Check:
       uint8_t complete_array[100];
-      complete_array[0] = Rx_frame.destination_adress;
-      complete_array[1] = Rx_frame.source_adress;
-      complete_array[2] = Rx_frame.frame_type;
-      complete_array[3] = Rx_frame.length;
-      for(int i = 0; i < Rx_frame.length; i++){
-        complete_array[i+4] = Rx_frame.payload[i];
+      complete_array[0] = RX_frame.destination_address;
+      complete_array[1] = RX_frame.source_address;
+      complete_array[2] = RX_frame.frame_type;
+      complete_array[3] = RX_frame.length;
+      for(int i = 0; i < RX_frame.length; i++){
+        complete_array[i+4] = RX_frame.payload[i];
       }
       for(int i = 0; i < CRC_SIZE; i++){
         int shift = 24 - 8*i ;
-        complete_array[i+FRAME_HEADER_SIZE+Rx_frame.length] = Rx_frame.crc>>(shift);
+        complete_array[i+FRAME_HEADER_SIZE+RX_frame.length] = RX_frame.crc>>(shift);
       }
-      int32_t Res = calculateCRC(complete_array, FRAME_HEADER_SIZE + Rx_frame.length + CRC_SIZE);
+      int32_t Res = calculateCRC(complete_array, FRAME_HEADER_SIZE + RX_frame.length + CRC_SIZE);
       num_of_frame++;
       if (Res == 0){
 
@@ -268,16 +290,16 @@ void setup()
   pinMode(CLK_IN_PIN, INPUT);
   Serial.begin(9600);
   if (sender){
-    F1.destination_adress=0x16;
-    F1.source_adress=0x6;
+    F1.destination_address=0x16;
+    F1.source_address=0x6;
   }
   else{
-    F1.destination_adress=0x6;
-    F1.source_adress=0x16;
+    F1.destination_address=0x6;
+    F1.source_address=0x16;
   }
   build_ACK_frame()
   
-}
+} 
 
 void loop()
 {
