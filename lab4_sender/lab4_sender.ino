@@ -18,9 +18,9 @@
 
 
 // usart_tx global variables
-#define BIT_TIME          20
+#define BIT_TIME          50 // debug
 #define half_BIT_TIME     BIT_TIME >> 1
-#define wait_max          100*BIT_TIME
+#define wait_max          20*BIT_TIME
 #define wait_min          10*BIT_TIME
 #define buffer_size       8
 
@@ -94,9 +94,9 @@ char ACK_P = 0x6;
 
 // L2 stop and wait global variables
 int l2_ack_counter = 0;
-typedef enum {IDLE,WAIT} SNW_state_type;
+typedef enum {IDLE,WAIT,SEND} SNW_state_type;
 
-SNW_state_type l2_snw_state = IDLE;
+SNW_state_type l2_snw_state = SEND;
 int num_of_frame = 0;
 int num_bad_frame = 0;
 
@@ -154,7 +154,7 @@ void build_tx_frame(){
     TX_frame.destination_address = 0x06;
     TX_frame.source_address = 0x16;
     TX_frame.frame_type = 0x00;
-    TX_frame.length = strlen(payload);
+    TX_frame.length = strlen(names)+1;
     TX_frame.payload = payload_array;
     build_array2send();
 }
@@ -205,9 +205,12 @@ void link_layer_tx(){
           if (!layer_1_tx_busy && !layer_2_tx_request){
               if (layer2_tx_counter < frame_size){
                   l1_tx_buffer = array2send[layer2_tx_counter];
+                  Serial.print(array2send[layer2_tx_counter],HEX); // debug
                   layer2_tx_counter++;
                   layer_2_tx_request = 1;
               } else {
+                  Serial.println("\nFrame sent"); // debug
+                  l2_snw_state = SEND; // debug
                   l2_tx_state = L2_IDLE;
                   layer2_tx_counter = 0;
               }
@@ -263,8 +266,8 @@ void link_layer_rx(){
           rx_payload_counter = 0;
         }
 
-        layer_1_rx_busy_prev = layer_1_rx_busy;
       }
+      layer_1_rx_busy_prev = layer_1_rx_busy;
       break;
     case Check:
       num_of_frame++;
@@ -302,8 +305,7 @@ void pack_payload(){
     for (int i = 0; i < len; i++){
         payload_array[i+1] = names[i];
     }
-    build_tx_frame();
-    Serial.println("Sending frame number: ");
+    Serial.print("Sending frame number: ");
     Serial.println(l2_frame_num);
     // // for debug:
     // Serial.print(TX_frame.payload[0], HEX);
@@ -321,12 +323,16 @@ void stop_and_wait(){
         unpack_payload();
         if (l2_frame_num == l2_ack_counter){
           l2_frame_num++;
-          pack_payload();
-          build_tx_frame();
-          l2_tx_state = TRANSMITTING;
+          l2_snw_state = SEND;
         } // if ack num not match, ignore ack
       }// if frame is bad frame, ignore the ack
       l2_rx_received_frame = L2_WAIT; // confirm that l2_rx_received_frame has been read
+  }else if (l2_snw_state == SEND){
+      pack_payload();
+      build_tx_frame();
+      l2_tx_state = TRANSMITTING;
+      l2_snw_state = WAIT;
+      Serial.println("SW waiting"); // debug
   }
   else if (l2_snw_state == IDLE){
     // do nothing
@@ -343,19 +349,23 @@ void setup()
   pinMode(CLK_OUT_PIN, OUTPUT);
   pinMode(CLK_IN_PIN, INPUT);
   Serial.begin(115200);
-  pack_payload(); // debug
+  // debug stall:
+  for(int i=0; i<1000; i++){
+    for(int j=0; j<1000; j++){
+      Serial.print("");
+    }
+  }
+  
 }
 
 void loop()
 { 
-  
-  // for (int i = 0; i < 15000; i++){
-  //   print("s");
-  // }
-//   link_layer_tx();
-//   link_layer_rx();
-//   usart_tx();
-//   usart_rx();
+  //Serial.println("loop");
+  stop_and_wait();
+  link_layer_tx();
+  link_layer_rx();
+  usart_tx();
+  usart_rx();
     
 }
 
