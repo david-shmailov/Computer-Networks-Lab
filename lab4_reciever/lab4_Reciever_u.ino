@@ -1,6 +1,6 @@
 // C code
 //
-#include "EthernetLab.h"
+#include "C:\Users\neriy\git repository\network_lab-3\lab4_reciever\EthernetLab.h"
 #define TX_PIN 2
 #define RX_PIN 3
 #define CLK_OUT_PIN 4
@@ -309,7 +309,7 @@ void pack_payload(){
     for (int i = 0; i < len; i++){
         payload_array[i+1] = names[i];
     }
-    build_tx_frame();
+    build_Ack_frame();
     Serial.println("Sending frame number: ");
     Serial.println(l2_frame_num);
     // // for debug:
@@ -372,13 +372,22 @@ void setup()
 
 void loop()
 { 
-  
+  l2_rx_state = Check;
+  RX_frame.destination_address = 0x06;
+  RX_frame.source_address = 0x16;
+  RX_frame.frame_type = 0x00;
+  const char *payload = "David_Neriya";
+  RX_frame.payload = *payload;
+  RX_frame.length = 12 ;
+  build_array2send();
+  Print("s");
+
   // for (int i = 0; i < 15000; i++){
   //   print("s");
   // }
  link_layer_tx();
  link_layer_rx();
- usart_tx();
- usart_rx();
+ //usart_tx();
+ //usart_rx();
     
 }
