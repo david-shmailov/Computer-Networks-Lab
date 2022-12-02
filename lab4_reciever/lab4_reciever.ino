@@ -15,13 +15,14 @@
 #define FRAME_HEADER_SIZE 4
 #define CRC_SIZE 4
 #define ACK_PAYLOAD_SIZE 2
+#define ACK_FRAME_SIZE 10
 
 
 // usart_tx global variables
 #define BIT_TIME          20
 #define half_BIT_TIME     BIT_TIME >> 1
-#define wait_max          100*BIT_TIME
-#define wait_min          10*BIT_TIME
+#define wait_max          3*BIT_TIME
+#define wait_min          1*BIT_TIME
 #define buffer_size       8
 
 struct Frame{
@@ -334,15 +335,15 @@ void unpack_payload(){
     l2_ack_counter = RX_frame.payload[0]; // first byte of payload is the ack counter
     // todo unpack the rest of the payload
 }
+
 void pack_ack_payload(){
     payload_array[0] = l2_ack_counter;
     payload_array[1] = ACK_P;
 
     Serial.print("Sending ACK number: ");
-    Serial.println(l2_ack_counter);
-
-    
+    Serial.println(l2_ack_counter); 
 }
+
 void stop_and_wait(){
   if (l2_snw_state == WAIT){
       //waiting for ACK

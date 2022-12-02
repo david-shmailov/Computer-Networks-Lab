@@ -15,14 +15,17 @@
 #define MAX_FRAME_SIZE 100
 #define FRAME_HEADER_SIZE 4
 #define CRC_SIZE 4
+#define ACK_PAYLOAD_SIZE 2
+#define ACK_FRAME_SIZE 10
 
 
 // usart_tx global variables
-#define BIT_TIME          50 // debug
+#define BIT_TIME          20 
 #define half_BIT_TIME     BIT_TIME >> 1
-#define wait_max          20*BIT_TIME
-#define wait_min          10*BIT_TIME
+#define wait_max          3*BIT_TIME
+#define wait_min          1*BIT_TIME
 #define buffer_size       8
+#define RTT               8*(ACK_FRAME_SIZE + 4)*BIT_TIME
 
 struct Frame{
   uint8_t destination_address;
@@ -76,8 +79,8 @@ uint8_t l2_frame_num = 0;
 char *payload;
 
 // L2 RX global variables
-typedef enum {L2_WAIT, GOOD_FRAME, BAD_FRAME} l2_rx_received_frame_type;
-l2_rx_received_frame_type l2_rx_received_frame = L2_WAIT;
+typedef enum {NO_FRAME, GOOD_FRAME, BAD_FRAME} l2_rx_received_frame_type;
+l2_rx_received_frame_type l2_rx_received_frame = NO_FRAME;
 typedef enum {Recieve, Check, Ack_Send,Idle} Rx_type;
 Rx_type l2_rx_state = Recieve;
 int rx_payload_counter = 0;
@@ -93,6 +96,10 @@ char ACK_P = 0x6;
 
 
 // L2 stop and wait global variables
+long start_time_ifg;
+long curr_time_ifg;
+long start_timeout;
+long curr_timeout;
 int l2_ack_counter = 0;
 typedef enum {IDLE,WAIT,SEND} SNW_state_type;
 
@@ -214,6 +221,7 @@ void init_rx_frame_struct(){
   RX_frame.payload = l2_rx_buff;
   RX_frame.crc = 0;
 }
+
 void link_layer_tx(){
     switch (l2_tx_state){
       case L2_IDLE:
@@ -238,6 +246,7 @@ void link_layer_tx(){
                   //l2_snw_state = SEND; // debug
                   l2_tx_state = L2_IDLE;
                   layer2_tx_counter = 0;
+                  start_time_ifg = millis();
               }
           }
           break;
@@ -339,6 +348,7 @@ void unpack_payload(){
         Serial.println(l2_ack_counter);
     }
 }
+
 void pack_payload(){
     int len = strlen(names);
     payload_array[0] = l2_frame_num;
@@ -356,23 +366,40 @@ void pack_payload(){
     // Serial.println("\nend");
     
 }
+
+void measure_RTT(){
+    curr_time_ifg = millis();
+    long rtt = curr_time_ifg - start_time_ifg;
+    Serial.print("RTT: ");
+    Serial.println(rtt);
+}
+
+
 void stop_and_wait(){
   if (l2_snw_state == WAIT){
+      curr_timeout = millis();
       //waiting for ACK
-      if (l2_rx_received_frame == GOOD_FRAME){
+      if (l2_rx_received_frame == GOOD_FRAME){// if frame is bad frame, ignore the ack
         unpack_payload();
         if (l2_frame_num == l2_ack_counter){
+          measure_RTT();
           l2_frame_num++;
           l2_snw_state = SEND;
           Serial.println("ACK received, sending next frame");
         } // if ack num not match, ignore ack
-      }// if frame is bad frame, ignore the ack
-      l2_rx_received_frame = L2_WAIT; // confirm that l2_rx_received_frame has been read
+        l2_rx_received_frame = NO_FRAME; // confirm that l2_rx_received_frame has been read
+      }else{
+        if (curr_timeout - start_timeout > RTT){
+          Serial.println("Timeout, sending frame again");
+          l2_snw_state = SEND;
+        }
+      } 
+
   }else if (l2_snw_state == SEND){
       pack_payload();
       build_tx_frame();
       l2_tx_state = TRANSMITTING;
-      l2_snw_state = WAIT;
+      l2_snw_state = IDLE;
       Serial.print("CRC sent: 0x");
       //for (int i = 0; i < CRC_SIZE; i++){
           Serial.println(TX_frame.crc, HEX);
@@ -380,7 +407,10 @@ void stop_and_wait(){
       Serial.println("SW waiting"); // debug
   }
   else if (l2_snw_state == IDLE){
-    // do nothing
+    if (l2_tx_state == L2_IDLE){
+      l2_snw_state = WAIT;
+      start_timeout = millis();
+    }
   }else{
     // do nothing
   }
