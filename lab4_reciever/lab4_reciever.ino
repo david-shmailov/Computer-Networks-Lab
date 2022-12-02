@@ -76,8 +76,8 @@ uint8_t l2_frame_num = 0;
 char *payload;
 
 // L2 RX global variables
-typedef enum {L2_WAIT, GOOD_FRAME, BAD_FRAME} l2_rx_received_frame_type;
-l2_rx_received_frame_type l2_rx_received_frame = L2_WAIT;
+typedef enum {NO_FRAME, GOOD_FRAME, BAD_FRAME} l2_rx_received_frame_type;
+l2_rx_received_frame_type l2_rx_received_frame = NO_FRAME;
 typedef enum {Recieve, Check, Ack_Send,Idle} Rx_type;
 Rx_type l2_rx_state = Recieve;
 int rx_payload_counter = 0;
@@ -96,7 +96,7 @@ char ACK_P = 0x6;
 int l2_ack_counter = 0;
 typedef enum {IDLE,WAIT,SEND} SNW_state_type;
 
-SNW_state_type l2_snw_state = IDLE;
+SNW_state_type l2_snw_state = WAIT;
 int num_of_frame = 0;
 int num_bad_frame = 0;
 
@@ -107,28 +107,36 @@ void usart_tx(){
   switch(l1_tx_state){
     case ACTIVE:
    		if (delta_t >= BIT_TIME){
+          if (l1_tx_count == buffer_size){
+            l1_tx_wait = random(wait_min , wait_max);
+            l1_tx_state = PASSIVE;
+            l1_tx_count = 0;
+            //Serial.println("l1_tx_state = PASSIVE"); // debug
+          }else{
+            //transmit bit
           digitalWrite(CLK_OUT_PIN,HIGH);
           l1_tx_bit = bitRead(l1_tx_buffer, l1_tx_count);
           digitalWrite(TX_PIN,l1_tx_bit);
           l1_tx_count ++;
           start_time = millis();
-          if (l1_tx_count == buffer_size){
-            l1_tx_wait = random(wait_min , wait_max);
-            l1_tx_state = PASSIVE;
-            l1_tx_count = 0;
           }
       } else if (delta_t >= half_BIT_TIME){
         digitalWrite(CLK_OUT_PIN,LOW);
       }
         break;
     case PASSIVE:
-      if (delta_t > l1_tx_wait)
+      if (delta_t > l1_tx_wait){
+        //Serial.println("L1 not busy"); // debug
+        l1_tx_wait = 0; // after waiting once keep checking for l2_tx_request
         layer_1_tx_busy = 0;
         if(  layer_2_tx_request == 1){
           l1_tx_state = ACTIVE;
           start_time = millis();
           layer_2_tx_request = 0;
           layer_1_tx_busy = 1;
+          // Serial.print("L1: sending byte: 0x"); // debug
+          // Serial.println(l1_tx_buffer,HEX); // debug
+        }
       }
       break;
   }
@@ -189,8 +197,10 @@ int test_RX_frame(){
     frame_size = FRAME_HEADER_SIZE + RX_frame.length;
     uint32_t crc = calculateCRC(complete_array, frame_size);
     if (crc != RX_frame.crc){
+      // Serial.println("Return 0");// debug
       return 0;
     }else {
+      //Serial.println("Return 1"); // debug
       return 1;
     }
     
@@ -201,7 +211,7 @@ void init_rx_frame_struct(){
   RX_frame.frame_type = 0x00;
   RX_frame.length = 0x00;
   RX_frame.payload = l2_rx_buff;
-  RX_frame.crc = 0x00;
+  RX_frame.crc = 0;
 }
 void link_layer_tx(){
     switch (l2_tx_state){
@@ -212,9 +222,19 @@ void link_layer_tx(){
           if (!layer_1_tx_busy && !layer_2_tx_request){
               if (layer2_tx_counter < frame_size){
                   l1_tx_buffer = array2send[layer2_tx_counter];
+                  Serial.print("Sending: 0x");
+                  Serial.println(array2send[layer2_tx_counter],HEX); // debug
                   layer2_tx_counter++;
                   layer_2_tx_request = 1;
               } else {
+                  Serial.println("\nFrame sent"); // debug
+                  // // debug stall:
+                  // for(int i=0; i<1000; i++){
+                  //   for(int j=0; j<1000; j++){
+                  //     Serial.print("");
+                  //   }
+                  // }
+                  //l2_snw_state = SEND; // debug
                   l2_tx_state = L2_IDLE;
                   layer2_tx_counter = 0;
               }
@@ -266,21 +286,22 @@ void link_layer_rx(){
           l2_rx_counter++;
         }
         else if ((l2_rx_counter>= FRAME_HEADER_SIZE + RX_frame.length)&&(l2_rx_counter<RX_frame.length + FRAME_HEADER_SIZE + CRC_SIZE))//CRC
-        {
+        { 
           if (rx_crc_counter<CRC_SIZE){
             Serial.print("CRC: 0x");
             Serial.println(l1_rx_buffer,HEX);//debug
-            RX_frame.crc=l1_rx_buffer;
-            RX_frame.crc<<8;
+            shift = 24 - rx_crc_counter*8;
+            uint32_t temp = l1_rx_buffer; // without this, arduino uses 16 bit int and overflows
+            RX_frame.crc |= (temp << shift ); // take the byte from the crc
             l2_rx_counter++;
             rx_crc_counter++;
+            if (rx_crc_counter == CRC_SIZE){
+              rx_crc_counter = 0;
+              l2_rx_counter = 0;
+              rx_payload_counter = 0;
+              l2_rx_state = Check;
+            }
           }
-        }
-        else if (l2_rx_counter==FRAME_HEADER_SIZE + RX_frame.length + CRC_SIZE){//EXIT
-          l2_rx_state = Check;
-          l2_rx_counter = 0;
-          rx_crc_counter = 0;
-          rx_payload_counter = 0;
         }
       }
       layer_1_rx_busy_prev = layer_1_rx_busy;
@@ -326,14 +347,15 @@ void stop_and_wait(){
   if (l2_snw_state == WAIT){
       //waiting for ACK
       if (l2_rx_received_frame == GOOD_FRAME){
-        Serial.print("GOOD FRAME RECEIVED");
+        Serial.println("GOOD FRAME RECEIVED");
         unpack_payload();
         pack_ack_payload();
         build_ack_frame();
         l2_tx_state = TRANSMITTING;
+        l2_rx_received_frame = NO_FRAME;
        // if ack num not match, ignore ack
       }// if frame is bad frame, ignore the ack
-      // l2_rx_received_frame = L2_WAIT; // confirm that l2_rx_received_frame has been read
+      // l2_rx_received_frame = NO_FRAME; // confirm that l2_rx_received_frame has been read
   }
   else if (l2_snw_state == IDLE){
     // do nothing
