@@ -99,6 +99,7 @@ int l2_frame_corrupted=0;
 int l2_frame_ack;
 uint8_t complete_array[MAX_FRAME_SIZE];
 char ACK_P = 0x6;
+int probability_error = 0;
 
 
 // L2 stop and wait global variables
@@ -240,19 +241,14 @@ void link_layer_tx(){
           if (!layer_1_tx_busy && !layer_2_tx_request){
               if (layer2_tx_counter < frame_size){
                   l1_tx_buffer = array2send[layer2_tx_counter];
+                  #if DEBUG
                   Serial.print("Sending: 0x");
                   Serial.println(array2send[layer2_tx_counter],HEX); // debug
+                  #endif
                   layer2_tx_counter++;
                   layer_2_tx_request = 1;
               } else {
-                  Serial.println("\nFrame sent"); // debug
-                  // // debug stall:
-                  // for(int i=0; i<1000; i++){
-                  //   for(int j=0; j<1000; j++){
-                  //     Serial.print("");
-                  //   }
-                  // }
-                  //l2_snw_state = SEND; // debug
+                  Serial.println("\nFrame sent"); 
                   l2_tx_state = L2_IDLE;
                   layer2_tx_counter = 0;
               }
@@ -270,36 +266,46 @@ void link_layer_rx(){
         start_time_ifg = millis(); // reset IFG timer everytime we get a new byte
         if(l2_rx_counter==0){//destination address
           init_rx_frame_struct();
+          #if DEBUG
           Serial.print("[link rx] dst addr: 0x");//debug
           Serial.println(l1_rx_buffer, HEX);//debug
+          #endif
           RX_frame.destination_address=l1_rx_buffer;
           l2_rx_counter++;
         }
         else if (l2_rx_counter==1)//source address
-        {
+        { 
+          #if DEBUG
           Serial.print("[link rx] src addr: 0x");//debug
           Serial.println(l1_rx_buffer,HEX);//debug
+          #endif
           RX_frame.source_address=l1_rx_buffer;
           l2_rx_counter++;
         }
         else if (l2_rx_counter==2)//frame type
-        {
+        { 
+          #if DEBUG
           Serial.print("[link rx] type: ");//debug
           Serial.println(l1_rx_buffer);//debug
+          #endif
           RX_frame.frame_type=l1_rx_buffer;
           l2_rx_counter++;
         }
         else if (l2_rx_counter==3)//payload length
         {
+          #if DEBUG
           Serial.print("[link rx] length: ");//debug
           Serial.println(l1_rx_buffer);//debug
+          #endif
           RX_frame.length= l1_rx_buffer + (IFG_DEBUG*8);
           l2_rx_counter++;
         }
         else if ((l2_rx_counter<FRAME_HEADER_SIZE+RX_frame.length)&&(l2_rx_counter>=FRAME_HEADER_SIZE))//payload
         { 
+          #if DEBUG
           Serial.print("[link rx] payload: 0x"); //debug
           Serial.println(l1_rx_buffer,HEX);
+          #endif
           RX_frame.payload[rx_payload_counter]=l1_rx_buffer;
           rx_payload_counter++;
           l2_rx_counter++;
@@ -307,8 +313,10 @@ void link_layer_rx(){
         else if ((l2_rx_counter>= FRAME_HEADER_SIZE + RX_frame.length)&&(l2_rx_counter<RX_frame.length + FRAME_HEADER_SIZE + CRC_SIZE))//CRC
         { 
           if (rx_crc_counter<CRC_SIZE){
+            #if DEBUG
             Serial.print("[link rx] CRC: 0x");
             Serial.println(l1_rx_buffer,HEX);//debug
+            #endif
             shift = 24 - rx_crc_counter*8;
             uint32_t temp = l1_rx_buffer; // without this, arduino uses 16 bit int and overflows
             RX_frame.crc |= (temp << shift ); // take the byte from the crc
@@ -326,19 +334,23 @@ void link_layer_rx(){
     case Check:
       num_of_frame++;
       if (test_RX_frame()){
-        Serial.println("[link rx] frame is correct");
         l2_rx_received_frame = GOOD_FRAME;
       } else {
-        Serial.println("[link rx] frame is corrupted");
         l2_rx_received_frame = BAD_FRAME;
         num_bad_frame++;
       }
+      probability_error = (num_bad_frame*100)/num_of_frame;
+      Serial.print("[link rx] probability of error: ");
+      Serial.print(probability_error);
+      Serial.println("\%");
       l2_rx_state = Idle;
       break;
 
     case Idle:
       if(layer_1_rx_busy){
+        #if DEBUG
         Serial.println("[link rx] l2_rx_state moved to Recieve"); // debug
+        #endif
         l2_rx_state = Recieve;
       }
       break;
@@ -372,10 +384,12 @@ void stop_and_wait(){
   if (l2_snw_state == WAIT){
       curr_time_ifg = millis();
       if (curr_time_ifg - start_time_ifg > half_IFG_TIME){
+        #if DEBUG
         Serial.print("[S&W]     time passed: ");
         Serial.println(curr_time_ifg - start_time_ifg);
         Serial.print("[S&W]     Half IFG time: ");
         Serial.println(half_IFG_TIME);
+        #endif
         if (l2_rx_received_frame == GOOD_FRAME){
           Serial.println("[S&W]     GOOD FRAME RECEIVED");
           unpack_payload();
@@ -385,10 +399,12 @@ void stop_and_wait(){
         // if ack num not match, ignore ack
         }else {
           Serial.println("[S&W]     BAD FRAME RECEIVED");
+          #if DEBUG
           Serial.print("[S&W]     l2_rx_received_frame: ");
           Serial.println(l2_rx_received_frame);
           Serial.print("[S&W]     l2_rx_state: "); // debug
           Serial.println(l2_rx_state);
+          #endif
           reset_link_layer_rx(); // reset all counters 
           l2_rx_state = Idle; // reset l2_rx_state
         }
@@ -399,7 +415,9 @@ void stop_and_wait(){
   else if (l2_snw_state == IDLE){
     if (l2_rx_state == Recieve){
       start_time_ifg = millis();
+      #if DEBUG
       Serial.println("[S&W]     l2_snw_state moved to WAIT"); //debug
+      #endif
       l2_snw_state = WAIT;
     }
   }else{

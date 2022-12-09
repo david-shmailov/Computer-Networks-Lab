@@ -17,6 +17,7 @@
 #define buffer_size       8
 #define L1_TIMEOUT        (5*BIT_TIME) >>1
 
+
 #define with_error 0
 #define num_of_errors 1
 
@@ -63,7 +64,9 @@ int clk_in_prev = 0;
 int clk_in_curr = 0;
 int l1_rx_bit;
 uint8_t l1_rx_buffer = 0;
-int l1_rx_count = 0; 
+int l1_rx_count = 0;
+int l1_rx_curr_timeout = 0;
+int l1_rx_start_timeout = 0;
 
 //layer2_tx global variables
 char * names = "David_Neriya";
@@ -124,7 +127,6 @@ void usart_tx(){
             l1_tx_wait = random(wait_min , wait_max);
             l1_tx_state = PASSIVE;
             l1_tx_count = 0;
-            //Serial.println("l1_tx_state = PASSIVE"); // debug
           }else{
             //transmit bit
             digitalWrite(CLK_OUT_PIN,HIGH);
@@ -139,7 +141,6 @@ void usart_tx(){
       break;
     case PASSIVE:
       if (delta_t > l1_tx_wait){
-        //Serial.println("L1 not busy"); // debug
         l1_tx_wait = 0; // after waiting once keep checking for l2_tx_request
         layer_1_tx_busy = 0;
         if(  layer_2_tx_request == 1){
@@ -147,8 +148,6 @@ void usart_tx(){
           start_time = millis();
           layer_2_tx_request = 0;
           layer_1_tx_busy = 1;
-          // Serial.print("L1: sending byte: 0x"); // debug
-          // Serial.println(l1_tx_buffer,HEX); // debug
         }
       }
       break;
@@ -157,7 +156,9 @@ void usart_tx(){
 
 void usart_rx(){
   clk_in_curr = digitalRead(CLK_IN_PIN);
+  l1_rx_curr_timeout = millis();
   if (clk_in_prev > clk_in_curr){
+    l1_rx_start_timeout = millis();
     layer_1_rx_busy = 1;
     l1_rx_bit = digitalRead(RX_PIN);
     bitWrite(l1_rx_buffer, l1_rx_count, l1_rx_bit);
@@ -166,6 +167,9 @@ void usart_rx(){
       l1_rx_count = 0;
       layer_1_rx_busy = 0;
     }
+  }else if (l1_rx_curr_timeout - l1_rx_start_timeout > L1_TIMEOUT){
+    l1_rx_count = 0;
+    layer_1_rx_busy = 0;
   }
   clk_in_prev = clk_in_curr;
   
@@ -175,7 +179,7 @@ void build_tx_frame(){
     TX_frame.destination_address = 0x06;
     TX_frame.source_address = 0x16;
     TX_frame.frame_type = 0x00;
-    TX_frame.length = strlen(names)+1; // (IFG_DEBUG*8) is to make IFG timeout on the receiver for debugging purposes
+    TX_frame.length = strlen(names)+1; // +1 for the number of frame
     TX_frame.payload = payload_array;
     build_array2send();
 }
@@ -210,10 +214,8 @@ int test_RX_frame(){
     frame_size = FRAME_HEADER_SIZE + RX_frame.length;
     uint32_t crc = calculateCRC(complete_array, frame_size);
     if (crc != RX_frame.crc){
-      Serial.println("Return 0");// debug
       return 0;
     }else {
-      Serial.println("Return 1"); // debug
       return 1;
     }
     
@@ -237,19 +239,14 @@ void link_layer_tx(){
           if (!layer_1_tx_busy && !layer_2_tx_request){
               if (layer2_tx_counter < frame_size){
                   l1_tx_buffer = array2send[layer2_tx_counter];
+                  #if DEBUG
                   Serial.print("Sending: 0x");
-                  Serial.println(array2send[layer2_tx_counter],HEX); // debug
+                  Serial.println(array2send[layer2_tx_counter],HEX);
+                  #endif
                   layer2_tx_counter++;
                   layer_2_tx_request = 1;
               } else {
-                  Serial.println("\nFrame sent"); // debug
-                  // // debug stall:
-                  // for(int i=0; i<1000; i++){
-                  //   for(int j=0; j<1000; j++){
-                  //     Serial.print("");
-                  //   }
-                  // }
-                  //l2_snw_state = SEND; // debug
+                  Serial.println("\nFrame sent"); 
                   l2_tx_state = L2_IDLE;
                   layer2_tx_counter = 0;
                   start_time_ifg = millis();
@@ -266,37 +263,47 @@ void link_layer_rx(){
     case Recieve: //save each segment in the designated space in RX_frame
       if(layer_1_rx_busy < layer_1_rx_busy_prev){
         if(l2_rx_counter==0){//destination address
-          init_rx_frame_struct();
-          Serial.print("destination address: 0x");//debug
-          Serial.println(l1_rx_buffer, HEX);//debug
-          RX_frame.destination_address=l1_rx_buffer;
-          l2_rx_counter++;
+            init_rx_frame_struct();
+            #if DEBUG
+            Serial.print("destination address: 0x");//debug
+            Serial.println(l1_rx_buffer, HEX);//debug
+            #endif
+            RX_frame.destination_address=l1_rx_buffer;
+            l2_rx_counter++;
         }
         else if (l2_rx_counter==1)//source address
         {
-          Serial.print("source address: 0x");//debug
-          Serial.println(l1_rx_buffer,HEX);//debug
+            #if DEBUG
+            Serial.print("source address: 0x");//debug
+            Serial.println(l1_rx_buffer,HEX);//debug
+            #endif
           RX_frame.source_address=l1_rx_buffer;
           l2_rx_counter++;
         }
         else if (l2_rx_counter==2)//frame type
         {
+            #if DEBUG
           Serial.print("frame type: ");//debug
           Serial.println(l1_rx_buffer);//debug
+            #endif
           RX_frame.frame_type=l1_rx_buffer;
           l2_rx_counter++;
         }
         else if (l2_rx_counter==3)//payload length
         {
+            #if DEBUG
           Serial.print("length: ");//debug
           Serial.println(l1_rx_buffer);//debug
+            #endif
           RX_frame.length=l1_rx_buffer;
           l2_rx_counter++;
         }
         else if ((l2_rx_counter<FRAME_HEADER_SIZE+RX_frame.length)&&(l2_rx_counter>=FRAME_HEADER_SIZE))//payload
         {
+            #if DEBUG
           Serial.print("payload: 0x"); //debug
           Serial.println(l1_rx_buffer,HEX);
+            #endif
           RX_frame.payload[rx_payload_counter]=l1_rx_buffer;
           rx_payload_counter++;
           l2_rx_counter++;
@@ -304,8 +311,10 @@ void link_layer_rx(){
         else if ((l2_rx_counter>= FRAME_HEADER_SIZE + RX_frame.length)&&(l2_rx_counter<RX_frame.length + FRAME_HEADER_SIZE + CRC_SIZE))//CRC
         {
           if (rx_crc_counter<CRC_SIZE){
+            #if DEBUG
             Serial.print("CRC: 0x");
             Serial.println(l1_rx_buffer,HEX);//debug
+            #endif
             shift = 24 - rx_crc_counter*8;
             uint32_t temp = l1_rx_buffer; // without this, arduino uses 16 bit int and overflows
             RX_frame.crc |= (temp << shift ); // take the byte from the crc
@@ -325,12 +334,10 @@ void link_layer_rx(){
     case Check:
       num_of_frame++;
       if (test_RX_frame()){
-        Serial.println("frame is correct");
         l2_rx_received_frame = GOOD_FRAME;
         l2_frame_corrupted = 0;
         l2_rx_state = Idle;
       } else {
-        Serial.println("frame is corrupted");
         l2_rx_received_frame = BAD_FRAME;
         l2_frame_corrupted = 1;
         l2_rx_state = Idle;
@@ -381,8 +388,10 @@ void measure_RTT(){
     long rtt = curr_time_ifg - start_time_ifg;
     int n = l2_frame_num + 1;
     RTT = ((n-1)*RTT + rtt)/n;
+    #if DEBUG
     Serial.print("RTT: ");
     Serial.println(RTT);
+    #endif
 }
 
 
@@ -413,11 +422,11 @@ void stop_and_wait(){
         build_tx_frame();
         l2_tx_state = TRANSMITTING;
         l2_snw_state = IDLE;
+        #if DEBUG
         Serial.print("CRC sent: 0x");
-        //for (int i = 0; i < CRC_SIZE; i++){
-            Serial.println(TX_frame.crc, HEX); // debug
-        //}
+        Serial.println(TX_frame.crc, HEX); // debug 
         Serial.println("SW waiting"); // debug
+        #endif
       }
   }
   else if (l2_snw_state == IDLE){
@@ -429,9 +438,11 @@ void stop_and_wait(){
   else if (l2_snw_state == IFG){
     curr_time_ifg = millis();
     if (curr_time_ifg - start_time_ifg > half_IFG_TIME){ // after half IFG the receiver should assemble and respond with ack
-      l2_snw_state = WAIT;
-      start_timeout = millis();
-      Serial.println("Half IFG time passed, waiting for ACK");
+        l2_snw_state = WAIT;
+        start_timeout = millis();
+        #if DEBUG
+        Serial.println("Half IFG time passed, waiting for ACK");
+        #endif
     }
   }else{
     // do nothing
@@ -446,6 +457,7 @@ void setup()
   pinMode(CLK_OUT_PIN, OUTPUT);
   pinMode(CLK_IN_PIN, INPUT);
   Serial.begin(115200);
+  #if DEBUG
   // debug stall:
   for(int i=0; i<1000; i++){
     for(int j=0; j<1000; j++){
@@ -453,7 +465,7 @@ void setup()
     }
   }
   Serial.println("\nStart");
-  
+  #endif
 }
 
 void loop()
