@@ -7,6 +7,15 @@
 #define CLK_OUT_PIN 4
 #define CLK_IN_PIN 5
 
+#define DEBUG 0 // set to 1 to print debug messages
+
+// usart_tx global variables
+#define BIT_TIME          20 // debug 
+#define half_BIT_TIME     BIT_TIME >> 1
+#define wait_max          3*BIT_TIME
+#define wait_min          1*BIT_TIME
+#define buffer_size       8
+#define L1_TIMEOUT        (5*BIT_TIME) >>1
 
 #define with_error 0
 #define num_of_errors 1
@@ -19,13 +28,9 @@
 #define ACK_FRAME_SIZE 10
 
 
-// usart_tx global variables
-#define BIT_TIME          20 
-#define half_BIT_TIME     BIT_TIME >> 1
-#define wait_max          3*BIT_TIME
-#define wait_min          1*BIT_TIME
-#define buffer_size       8
-#define RTT               8*(ACK_FRAME_SIZE + 4)*BIT_TIME
+#define initial_RTT       8*(ACK_FRAME_SIZE + 4)*BIT_TIME
+#define IFG_TIME          12*8*BIT_TIME
+#define half_IFG_TIME     IFG_TIME >> 1
 
 struct Frame{
   uint8_t destination_address;
@@ -64,7 +69,7 @@ int l1_rx_count = 0;
 char * names = "David_Neriya";
 int layer_1_tx_busy = 0;
 int layer_2_tx_request =0 ;
-typedef enum {L2_IDLE,TRANSMITTING,} l2_state_type;
+typedef enum {L2_IDLE,TRANSMITTING} l2_state_type;
 typedef enum {DST_ADDR, SRC_ADDR, TYPE, LENGTH, PAYLOAD, CRC} l2_frame_state;
 l2_state_type l2_tx_state = L2_IDLE;
 l2_frame_state l2_tx_frame_state = DST_ADDR;
@@ -101,7 +106,8 @@ long curr_time_ifg;
 long start_timeout;
 long curr_timeout;
 int l2_ack_counter = 0;
-typedef enum {IDLE,WAIT,SEND} SNW_state_type;
+typedef enum {IDLE,WAIT,SEND,IFG} SNW_state_type;
+long RTT = initial_RTT;
 
 SNW_state_type l2_snw_state = SEND;
 int num_of_frame = 0;
@@ -169,7 +175,7 @@ void build_tx_frame(){
     TX_frame.destination_address = 0x06;
     TX_frame.source_address = 0x16;
     TX_frame.frame_type = 0x00;
-    TX_frame.length = strlen(names)+1;
+    TX_frame.length = strlen(names)+1; // (IFG_DEBUG*8) is to make IFG timeout on the receiver for debugging purposes
     TX_frame.payload = payload_array;
     build_array2send();
 }
@@ -341,11 +347,14 @@ void link_layer_rx(){
 }
 
 void unpack_payload(){
-    l2_ack_counter = RX_frame.payload[0]; // first byte of payload is the ack counter
+    // assume we only get ACK frames
     uint8_t l2_ack = RX_frame.payload[1]; // second byte of payload is the ack
     if (l2_ack == ACK_P){
+        l2_ack_counter = RX_frame.payload[0]; // first byte of payload is the ack counter
         Serial.print("Received ACK: ");
         Serial.println(l2_ack_counter);
+    }else {
+        l2_ack_counter = -1;
     }
 }
 
@@ -370,8 +379,10 @@ void pack_payload(){
 void measure_RTT(){
     curr_time_ifg = millis();
     long rtt = curr_time_ifg - start_time_ifg;
+    int n = l2_frame_num + 1;
+    RTT = ((n-1)*RTT + rtt)/n;
     Serial.print("RTT: ");
-    Serial.println(rtt);
+    Serial.println(RTT);
 }
 
 
@@ -381,10 +392,10 @@ void stop_and_wait(){
       //waiting for ACK
       if (l2_rx_received_frame == GOOD_FRAME){// if frame is bad frame, ignore the ack
         unpack_payload();
-        if (l2_frame_num == l2_ack_counter){
+        if (l2_frame_num +1 == l2_ack_counter){
           measure_RTT();
           l2_frame_num++;
-          l2_snw_state = SEND;
+          l2_snw_state = SEND; // maybe bug here, if ack is received we are long past due IFG time
           Serial.println("ACK received, sending next frame");
         } // if ack num not match, ignore ack
         l2_rx_received_frame = NO_FRAME; // confirm that l2_rx_received_frame has been read
@@ -393,23 +404,34 @@ void stop_and_wait(){
           Serial.println("Timeout, sending frame again");
           l2_snw_state = SEND;
         }
-      } 
+      }
 
   }else if (l2_snw_state == SEND){
-      pack_payload();
-      build_tx_frame();
-      l2_tx_state = TRANSMITTING;
-      l2_snw_state = IDLE;
-      Serial.print("CRC sent: 0x");
-      //for (int i = 0; i < CRC_SIZE; i++){
-          Serial.println(TX_frame.crc, HEX);
-      //}
-      Serial.println("SW waiting"); // debug
+      curr_time_ifg = millis();
+      if (curr_time_ifg-start_time_ifg > IFG_TIME){
+        pack_payload();
+        build_tx_frame();
+        l2_tx_state = TRANSMITTING;
+        l2_snw_state = IDLE;
+        Serial.print("CRC sent: 0x");
+        //for (int i = 0; i < CRC_SIZE; i++){
+            Serial.println(TX_frame.crc, HEX); // debug
+        //}
+        Serial.println("SW waiting"); // debug
+      }
   }
   else if (l2_snw_state == IDLE){
     if (l2_tx_state == L2_IDLE){
+      l2_snw_state = IFG;
+      start_time_ifg = millis();
+    }
+  }
+  else if (l2_snw_state == IFG){
+    curr_time_ifg = millis();
+    if (curr_time_ifg - start_time_ifg > half_IFG_TIME){ // after half IFG the receiver should assemble and respond with ack
       l2_snw_state = WAIT;
       start_timeout = millis();
+      Serial.println("Half IFG time passed, waiting for ACK");
     }
   }else{
     // do nothing
