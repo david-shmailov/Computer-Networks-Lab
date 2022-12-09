@@ -1,7 +1,6 @@
 // C code
 //
 #include "EthernetLab.h"
-#include "lab4.h"
 #define TX_PIN 2
 #define RX_PIN 3
 #define CLK_OUT_PIN 4
